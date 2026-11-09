@@ -16,6 +16,19 @@ pub fn project_root() -> PathBuf {
             return crate_dir;
         }
     }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(start) = exe.parent() {
+            let mut dir = start.to_path_buf();
+            for _ in 0..8 {
+                if dir.join("data").join("stars.json").is_file() {
+                    return dir;
+                }
+                if !dir.pop() {
+                    break;
+                }
+            }
+        }
+    }
     let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     for _ in 0..6 {
         if dir.join("data").join("stars.json").is_file() {

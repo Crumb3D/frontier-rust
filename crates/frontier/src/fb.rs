@@ -77,6 +77,7 @@ impl Canvas {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn get(&self, x: i32, y: i32) -> Rgb {
         if x < 0 || y < 0 || x >= self.w || y >= self.h {
             return [0, 0, 0];

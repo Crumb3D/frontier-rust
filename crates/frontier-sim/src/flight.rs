@@ -118,6 +118,8 @@ pub enum FlightMode {
     Manual,
     EnginesOff,
     TakeOff,
+    /// Flies toward a body locked on the system chart. A galactic target is a jump.
+    Autopilot,
 }
 
 #[derive(Clone, Debug)]
@@ -183,7 +185,7 @@ impl FlightModel {
                 let target = ref_vel + up * TAKEOFF_CLIMB;
                 ((target - s.velocity) / TAKEOFF_RESPONSE_S).clamp_length_max(TAKEOFF_LIFT) - gravity
             }
-            FlightMode::Manual => {
+            FlightMode::Manual | FlightMode::Autopilot => {
                 let target = ref_vel + fwd * self.controls.set_speed;
                 (target - s.velocity) / RESPONSE_S - gravity
             }

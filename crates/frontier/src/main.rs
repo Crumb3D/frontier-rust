@@ -4,13 +4,15 @@
 //! `frontier --shot <scene> <out.png>` renders one scene headless, for comparing
 //! against the original's stills. Scenes: title, landed, comms, launchreq,
 //! inventory, profile, roster, stock, buy, bulletin, video, federal, shipyard,
-//! upgrades, repairs, ships, police, takeoff, climb, station, dock, land, space.
+//! upgrades, repairs, ships, police, takeoff, climb, station, dock, land, space,
+//! map, system, jump.
 
 mod assets;
 mod console;
 mod fb;
 mod font;
 mod game;
+mod music;
 mod grf;
 mod meshes;
 mod palette;
@@ -23,7 +25,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -47,6 +49,9 @@ impl ApplicationHandler for App {
             .with_inner_size(LogicalSize::new(W as f64 * 2.0, H as f64 * 2.0))
             .with_min_inner_size(LogicalSize::new(W as f64, H as f64));
         let window = Arc::new(el.create_window(attrs).expect("create window"));
+        if let Some(icon) = window_icon() {
+            window.set_window_icon(Some(icon));
+        }
         let size = window.inner_size();
         let surface = SurfaceTexture::new(size.width, size.height, window.clone());
         let pixels = Pixels::new(W as u32, H as u32, surface).expect("create pixel buffer");
@@ -84,6 +89,13 @@ impl ApplicationHandler for App {
                     self.game.mouse_move(x, y);
                 }
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let lines = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y as f64,
+                    MouseScrollDelta::PixelDelta(p) => p.y / 120.0,
+                };
+                self.game.wheel(lines);
+            }
             WindowEvent::MouseInput { state, button, .. } => {
                 let down = state == ElementState::Pressed;
                 match button {
@@ -118,6 +130,12 @@ impl ApplicationHandler for App {
             w.request_redraw();
         }
     }
+}
+
+fn window_icon() -> Option<winit::window::Icon> {
+    let img = image::open(frontier_sim::paths::assets_dir().join("icon.png")).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    winit::window::Icon::from_rgba(img.into_raw(), w, h).ok()
 }
 
 fn run_for(game: &mut Game, seconds: f64) {
@@ -201,6 +219,22 @@ fn shot(scene: &str, out: &str) -> Result<(), String> {
                 hold(&mut game, KeyCode::Enter, 2.5);
                 run_for(&mut game, 40.0);
             }
+        }
+        "map" => {
+            game.new_game();
+            game.key_down(KeyCode::F2, false);
+        }
+        "system" => {
+            game.new_game();
+            game.key_down(KeyCode::F2, false);
+            game.key_down(KeyCode::F2, false);
+        }
+        // Centre the next system east, then jump. The status line names where we arrive.
+        "jump" => {
+            game.new_game();
+            game.key_down(KeyCode::F2, false);
+            game.key_down(KeyCode::ArrowRight, false);
+            game.key_down(KeyCode::KeyH, false);
         }
         "space" => {
             game.new_game();

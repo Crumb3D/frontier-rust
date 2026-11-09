@@ -172,13 +172,19 @@ impl Game {
             Page::Ships => &[
                 "Select Buy to part exchange your ship for a ship with no extra equipment, or View to see the ship with suggested options fitted.",
             ],
+            Page::Police if self.fine_here() > 0 => &[],
             Page::Police => &["We have no business with you at the moment."],
             Page::FederalHq => &[
                 "Listed above are mercenary missions on offer appropriate to your current security and combat ratings with us.",
             ],
             Page::Video(_) | Page::ShipView(_) => &[],
         };
-        if !prompt.is_empty() {
+        if matches!(page, Page::Police) && self.fine_here() > 0 {
+            self.say(vec![(
+                format!("Outstanding fine {}.", money(self.fine_here() * 10)),
+                palette::CON_GREEN,
+            )]);
+        } else if !prompt.is_empty() {
             self.say(prompt.iter().map(|s| (s.to_string(), palette::CON_GREEN)).collect());
         }
         if let Page::Video(i) = page {
@@ -220,6 +226,7 @@ impl Game {
             (Page::Ships, Hit::Sell(i)) => self.page = Page::ShipView(i),
             (Page::ShipView(_), Hit::Back) => self.page = Page::Ships,
             (Page::Upgrades | Page::Repairs | Page::Ships, Hit::Back) => self.open_page(Page::Shipyard),
+            (Page::Police, Hit::Reply(0)) if self.fine_here() > 0 => self.pay_fine(),
             (Page::Police, Hit::Reply(_)) => self.open_page(Page::Shipyard),
             (Page::Bulletin, Hit::Ad(i)) => self.open_ad(self.scroll + i),
             (Page::Video(ad), Hit::Reply(r)) => self.video_reply(ad, r),
@@ -243,6 +250,24 @@ impl Game {
         }
     }
 
+    fn pay_fine(&mut self) {
+        let due = self.fine_here();
+        let bill = due * 10;
+        if bill <= 0 {
+            self.open_page(Page::Police);
+            return;
+        }
+        if !self.free_purchases && self.cash < bill {
+            self.say(vec![(format!("Outstanding fine {}.", money(bill)), palette::CON_GREEN)]);
+            return;
+        }
+        if !self.free_purchases {
+            self.cash -= bill;
+        }
+        self.fines.remove(&self.system().government.clone());
+        self.open_page(Page::Police);
+    }
+
     fn launch_request(&mut self) {
         self.launch_clearance = true;
         self.panel = Panel::View;
@@ -257,16 +282,17 @@ impl Game {
         let Some(l) = self.port.as_ref().and_then(|p| p.market.get(i)).cloned() else { return };
         let name = l.good.name.clone();
         let free = self.yard.free_cargo(&self.fitted);
+        let price = if self.free_purchases { 0 } else { l.price as i64 };
         let text = if l.stock <= 0 {
             format!("There is no {name} for sale.")
-        } else if self.cash < l.price as i64 {
+        } else if self.cash < price {
             format!("You cannot afford any {name}.")
         } else if free < 1.0 {
             "You have no room in your cargo bay.".to_string()
         } else if l.good.needs_life_support && !self.fitted.has("life_support") {
             "You need Cargo Bay Life Support to carry that.".to_string()
         } else {
-            self.cash -= l.price as i64;
+            self.cash -= price;
             *self.fitted.cargo.entry(l.good.id.clone()).or_insert(0) += 1;
             if let Some(p) = self.port.as_mut() {
                 p.market[i].stock -= 1;
@@ -306,7 +332,8 @@ impl Game {
         let e = self.yard.equipment[&id].clone();
         let hull = self.yard.ships[&self.fitted.ship_id].clone();
         let stackable = e.raw_bool("stackable") || e.slot == "missile";
-        let text = if self.cash < e.price as i64 * 10 {
+        let price = if self.free_purchases { 0 } else { e.price as i64 * 10 };
+        let text = if self.cash < price {
             format!("You cannot afford a new {}.", e.name)
         } else if e.slot == "missile" && self.fitted.missile_load.len() as i32 >= hull.missiles {
             "You have no empty missile positions.".to_string()
@@ -319,7 +346,7 @@ impl Game {
         } else if self.yard.free_cargo(&self.fitted) < e.mass_t {
             format!("There is no room for a new {}.", e.name)
         } else {
-            self.cash -= e.price as i64 * 10;
+            self.cash -= price;
             self.fitted.equipment.push(id.clone());
             if e.slot == "missile" {
                 self.fitted.missile_load.push(id.clone());
@@ -379,10 +406,11 @@ impl Game {
     fn repair(&mut self, i: usize) {
         let list = self.repair_list();
         let Some((_, cost)) = list.get(i).cloned() else { return };
-        let text = if self.cash < cost * 10 {
+        let bill = if self.free_purchases { 0 } else { cost * 10 };
+        let text = if self.cash < bill {
             "You cannot afford that service.".to_string()
         } else {
-            self.cash -= cost * 10;
+            self.cash -= bill;
             let day = self.day();
             if i != 2 {
                 self.serviced.0 = Some(day);
@@ -406,11 +434,12 @@ impl Game {
         let Some(sid) = self.port.as_ref().and_then(|p| p.ships.get(i)).cloned() else { return };
         let s = self.yard.ships[&sid].clone();
         let cost = s.price as i64 - self.trade_in();
-        if self.cash < cost * 10 {
+        let bill = if self.free_purchases && cost > 0 { 0 } else { cost * 10 };
+        if self.cash < bill {
             self.say(vec![(format!("You cannot afford a new {}.", s.name), palette::CON_GREEN)]);
             return;
         }
-        self.cash -= cost * 10;
+        self.cash -= bill;
         let drive = self
             .yard
             .equipment
@@ -482,6 +511,13 @@ impl Game {
             Page::Repairs => self.draw_repairs(cv, &mut hits),
             Page::Ships => self.draw_ships(cv, &mut hits),
             Page::ShipView(i) => self.draw_ship_view(cv, i, &mut hits),
+            Page::Police if self.fine_here() > 0 => {
+                let rows = [
+                    vec![format!("Pay fine {}", money(self.fine_here() * 10))],
+                    vec!["Hang up.".to_string()],
+                ];
+                responses(cv, &self.a, &rows, 10, &mut hits);
+            }
             Page::Police => responses(cv, &self.a, &[vec!["Hang up.".to_string()]], 10, &mut hits),
             Page::Bulletin => self.draw_bulletin(cv, &mut hits),
             Page::Video(i) => self.draw_video(cv, i, &mut hits),

@@ -47,14 +47,6 @@ pub fn unlight(c: Rgb) -> Rgb {
     }
 }
 
-fn light(c: Rgb) -> Rgb {
-    match c {
-        [128, 128, 128] => [224, 224, 224],
-        [96, 96, 96] => [128, 128, 128],
-        _ => c,
-    }
-}
-
 /// What the console should show this frame.
 pub struct ConsoleState<'a> {
     pub stardate: String,
@@ -99,16 +91,34 @@ pub struct ScanContact {
     pub color: Rgb,
 }
 
+const VCR_ICONS: [&str; 6] = [
+    "pause.png",
+    "StarDreamer Normal Speed.png",
+    "StarDreamer speed 2.png",
+    "StarDreamer speed 3.png",
+    "StarDreamer speed 4.png",
+    "StarDreamer speed 5.png",
+];
+
+/// Selected Stardreamer key: the grey of the glyph becomes white.
+fn vcr_lit(c: Rgb) -> Rgb {
+    let (r, g, b) = (c[0] as i16, c[1] as i16, c[2] as i16);
+    if (r - g).abs() < 28 && (g - b).abs() < 28 && (50..210).contains(&c[0]) {
+        [255, 255, 255]
+    } else {
+        c
+    }
+}
+
 pub fn draw(cv: &mut Canvas, assets: &Assets, st: &ConsoleState) {
     let top = cv.h - CON_H;
     cv.blit(&assets.console, 0, top);
 
-    let r = vcr_rect(st.vcr_active.min(5), top);
-    for y in r.y..r.bottom() {
-        for x in r.x..r.right() {
-            let c = light(cv.get(x, y));
-            cv.put(x, y, c);
-        }
+    let active = st.vcr_active.min(5);
+    for (i, name) in VCR_ICONS.iter().enumerate() {
+        let Some(img) = assets.icons.get(*name) else { continue };
+        let recolor: Option<&dyn Fn(Rgb) -> Rgb> = if i == active { Some(&vcr_lit) } else { None };
+        cv.blit_scaled(img, vcr_rect(i, top), recolor);
     }
 
     for i in 0..4 {

@@ -174,7 +174,8 @@ pub fn title(cv: &mut Canvas, a: &Assets, frame: Option<&RgbaImage>, t: f64) -> 
         let w = text(cv, a, item, 101, y, white);
         hits.push((Rect::new(180, y * 2 - 4, (w + 12) * 2, 22), i));
     }
-    let copy = "Copyright © D.J.Braben 1993, All rights reserved.";
+    let copy = "Copyright © D.J.Braben 1993, All rights reserved.
+                Rust Port by Crumb3D 2026";
     text(cv, a, copy, 160 - text_width(a, copy) / 2, 156, white);
     hits
 }
@@ -274,7 +275,7 @@ pub fn equipment_status(cv: &mut Canvas, a: &Assets, fitted: &FittedShip, yard: 
 }
 
 /// F3 second page: the commander's profile, on grey.
-pub fn profile(cv: &mut Canvas, a: &Assets, t: f64) {
+pub fn profile(cv: &mut Canvas, a: &Assets, t: f64, rank: &str, legal: bool) {
     let area = Rect::new(0, 0, W, VIEW_H);
     cv.set_clip(area);
     cv.fill_rect(area, palette::PROFILE_BG);
@@ -286,12 +287,13 @@ pub fn profile(cv: &mut Canvas, a: &Assets, t: f64) {
     text(cv, a, "Imperial Title:", 2, 40, w);
     text(cv, a, "Outsider", 52, 40, w);
     text(cv, a, "Elite Rating:", 2, 50, w);
-    text(cv, a, "Harmless", 52, 50, w);
+    text(cv, a, rank, 52, 50, w);
     text(cv, a, "LEGAL STATUS", 114, 20, w);
+    let standing = if legal { "Clean" } else { "Offender" };
     for (i, who) in ["Federal:", "Imperial:", "Interpol:"].iter().enumerate() {
         let y = 30 + 10 * i as i32;
         text(cv, a, who, 114, y, w);
-        text(cv, a, "Clean", 150, y, w);
+        text(cv, a, standing, 150, y, w);
     }
     text(cv, a, "FEDERAL CRIMINAL RECORD", 2, 65, w);
     text(cv, a, "MEDALS AND PERMITS", 2, 123, w);

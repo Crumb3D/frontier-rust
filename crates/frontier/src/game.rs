@@ -4,10 +4,14 @@
 //! or dock at Merlin Orbital (clearance, slow approach into the slot).
 
 mod bulletin;
+mod cheat;
+mod map;
 mod station;
+mod traffic;
 
 use crate::assets::Assets;
 use crate::console::{self, ConsoleState, ScanContact, CON_H};
+use crate::music::Music;
 use crate::fb::{Canvas, Rect};
 use crate::font::CONSOLE;
 use crate::meshes::{self, Mesh};
@@ -24,7 +28,7 @@ use frontier_sim::{
 };
 use glam::{DMat3, DVec3};
 use station::{Page, Port};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use winit::keyboard::KeyCode;
 
 pub const W: i32 = 640;
@@ -54,6 +58,16 @@ pub enum Panel {
     View,
     Comms,
     Inventory,
+    Map,
+}
+
+/// F2 cycles these two. F1 leaves the chart and goes back to the view.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MapPage {
+    Galaxy,
+    System,
+    /// F6 on the galactic chart: the selected system's data.
+    Data,
 }
 
 #[derive(Clone, Debug)]
@@ -64,13 +78,106 @@ pub enum Where {
     Flying,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Action {
     Key(KeyCode),
     Vcr(usize),
     Comms(usize),
     Title(usize),
     Station(station::Hit),
+    /// A star on the galactic chart. Its id is the hyperspace destination.
+    Map(String),
+    /// A body on the current-system chart.
+    Body(String),
+    /// A row on the admin cheat menu.
+    Cheat(usize),
+    /// A hyperspace cloud in the view.
+    Cloud(usize),
+    /// A body on the system data page.
+    Info(String),
+    /// A checkbox on the pause options screen.
+    Pref(u8),
+}
+
+/// The star-streak tunnel. The jump itself is applied when this finishes.
+struct JumpAnim {
+    t: f64,
+    dest: String,
+    fuel: i32,
+    hours: f64,
+}
+
+const JUMP_SECS: f64 = 3.2;
+/// How close the Hyperspace Cloud Analyser has to be to read a remnant.
+const CLOUD_RANGE_KM: f64 = 80.0;
+/// The exit disturbance stays visible for two days.
+const CLOUD_LIFE_DAYS: f64 = 2.0;
+
+/// The options screen the original opens when the game is paused.
+#[derive(Clone)]
+struct Prefs {
+    detail: u8,
+    sound: bool,
+    engine: bool,
+    station_sfx: bool,
+    wind: bool,
+    beeps: bool,
+    music: bool,
+    music_hyper: bool,
+    music_dock: bool,
+    music_battle: bool,
+    music_continuous: bool,
+    dust: bool,
+    stars: bool,
+    lock_external: bool,
+    reverse_lr: bool,
+    reverse_ud: bool,
+    elite_controls: bool,
+    tunnels: bool,
+    ship_tunnels: bool,
+    extensions: bool,
+    track: u8,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            detail: 1,
+            sound: true,
+            engine: true,
+            station_sfx: true,
+            wind: true,
+            beeps: true,
+            music: true,
+            music_hyper: true,
+            music_dock: true,
+            music_battle: false,
+            music_continuous: false,
+            dust: true,
+            stars: true,
+            lock_external: false,
+            reverse_lr: false,
+            reverse_ud: false,
+            elite_controls: false,
+            tunnels: true,
+            ship_tunnels: false,
+            extensions: true,
+            track: 6,
+        }
+    }
+}
+
+/// Residual disturbance left where a ship came out of hyperspace.
+struct Residue {
+    system: String,
+    /// Position in the star's frame, km.
+    pos: DVec3,
+    /// System the ship jumped from.
+    origin: String,
+    /// Stardate of the arrival.
+    arrived: f64,
+    mass_t: f64,
+    expires: f64,
 }
 
 /// What speeds and altitude are measured against this frame.
@@ -115,7 +222,12 @@ pub struct Game {
     pub launch_clearance: bool,
     pub dock_clearance: Option<String>,
     pub gear_down: bool,
-    pub labels: bool,
+    /// F10 in the view: 0 both, 1 names, 2 tunnel, 3 neither.
+    hud_mode: u8,
+    show_fps: bool,
+    fps: f64,
+    fps_acc: f64,
+    fps_n: u32,
     pub rear: bool,
     /// Scanner-well text: paragraphs in their own colours.
     pub message: Vec<(String, Rgb)>,
@@ -124,7 +236,14 @@ pub struct Game {
     held: HashSet<KeyCode>,
     pub mouse: (i32, i32),
     rmb: bool,
+    lmb: bool,
+    /// Where the left button went down, so a drag can be told from a click.
+    drag_from: (i32, i32),
+    dragging: bool,
     mouse_acc: (f64, f64),
+    /// Time rate to restore when the pause is lifted.
+    vcr_was: usize,
+    prefs: Prefs,
     stars: Vec<(DVec3, u8)>,
     station_mesh: Mesh,
     port_mesh: Mesh,
@@ -132,6 +251,67 @@ pub struct Game {
     pub hits: Vec<(Rect, Action)>,
     /// Heading of each starport's layout about its local vertical, radians from north.
     port_yaw: HashMap<String, f64>,
+    /// Hyperspace destination. The system kept in the centre of the galactic chart.
+    dest: String,
+    map_page: MapPage,
+    map_yaw: f64,
+    map_pitch: f64,
+    map_zoom: f64,
+    map_stalks: bool,
+    map_grid: bool,
+    map_names: bool,
+    map_tools: bool,
+    /// Seconds until the next arrow-key step, so a held key walks the chart.
+    map_repeat: f64,
+    /// Light-years the galactic chart is centred on. Separate from the target so
+    /// a click can mark a system without sliding the grid under it.
+    cam_at: DVec3,
+    /// F10 on a chart: the next click places the target.
+    arm_target: bool,
+    /// Time is stopped. The options screen is not up yet.
+    paused: bool,
+    /// The options screen is showing.
+    pause_menu: bool,
+    /// System data page: 0 overview, 1 economy, 2 political.
+    data_page: u8,
+    /// Body picked on the system data diagram.
+    data_body: Option<String>,
+    sys_yaw: f64,
+    sys_pitch: f64,
+    sys_zoom: f64,
+    sys_orbits: bool,
+    sys_names: bool,
+    /// Body the current-system chart is centred on.
+    focus: String,
+    /// Planet, moon, station or starport locked for the autopilot. The star is not one.
+    ap_body: Option<String>,
+    /// Playing the hyperspace tunnel. None while in normal flight.
+    jump: Option<JumpAnim>,
+    /// Hyperspace clouds, kept per system. A jump adds one at the exit.
+    clouds: Vec<Residue>,
+    /// Remnant the commander clicked. None reads the nearest one in range.
+    cloud_sel: Option<usize>,
+    cheats_open: bool,
+    cheat_sel: usize,
+    free_purchases: bool,
+    infinite_fuel: bool,
+    /// Replaces the drive's rated range while set.
+    cheat_jump_ly: Option<f64>,
+    kills: i32,
+    /// Fines in whole credits, kept per government. A democracy fine is still
+    /// due in the next democracy, and is not collected under a different government.
+    fines: BTreeMap<String, i64>,
+    /// Shots that missed while police could see them. Two brings a warning.
+    police_misses: u8,
+    police_warned: bool,
+    /// The nearest station has already been told about this incident.
+    station_told: bool,
+    god_mode: bool,
+    traffic: Vec<traffic::Npc>,
+    spawned_traffic: bool,
+    laser_wait: f64,
+    traffic_seq: u32,
+    music: Music,
 }
 
 fn surface_g(p: &Planet) -> f64 {
@@ -160,6 +340,7 @@ fn surface_frame(n: DVec3) -> DMat3 {
 impl Game {
     pub fn new(a: Assets) -> Result<Self, String> {
         let galaxy = Galaxy::load()?;
+        let cam_at = galaxy.get("ross154").position_ly;
         let yard = Shipyard::load()?;
         let fitted = default_eagle();
         let fm = FlightModel::new(yard.stats(&fitted));
@@ -195,7 +376,11 @@ impl Game {
             launch_clearance: false,
             dock_clearance: None,
             gear_down: true,
-            labels: false,
+            hud_mode: 0,
+            show_fps: false,
+            fps: 0.0,
+            fps_acc: 0.0,
+            fps_n: 0,
             rear: false,
             message: Vec::new(),
             message_t: 0.0,
@@ -203,13 +388,60 @@ impl Game {
             held: HashSet::new(),
             mouse: (0, 0),
             rmb: false,
+            lmb: false,
+            drag_from: (0, 0),
+            dragging: false,
             mouse_acc: (0.0, 0.0),
+            vcr_was: 1,
+            prefs: Prefs::default(),
             stars: render3d::starfield(0x5eed_f2, 900),
             station_mesh: meshes::station(1.0),
             port_mesh: meshes::starport(7),
             quit: false,
             hits: Vec::new(),
             port_yaw: HashMap::new(),
+            dest: "ross154".into(),
+            map_page: MapPage::Galaxy,
+            map_yaw: 0.4,
+            map_pitch: -0.95,
+            map_zoom: 14.0,
+            map_stalks: true,
+            map_grid: true,
+            map_names: true,
+            map_tools: false,
+            map_repeat: 0.0,
+            sys_yaw: 0.35,
+            sys_pitch: -0.8,
+            sys_zoom: 1.0,
+            sys_orbits: true,
+            sys_names: true,
+            focus: "star".into(),
+            ap_body: None,
+            jump: None,
+            clouds: Vec::new(),
+            cloud_sel: None,
+            cheats_open: false,
+            cheat_sel: 0,
+            free_purchases: false,
+            infinite_fuel: false,
+            cheat_jump_ly: None,
+            kills: 0,
+            fines: BTreeMap::new(),
+            police_misses: 0,
+            police_warned: false,
+            station_told: false,
+            god_mode: false,
+            traffic: Vec::new(),
+            spawned_traffic: false,
+            laser_wait: 0.0,
+            traffic_seq: 0,
+            cam_at,
+            arm_target: false,
+            paused: false,
+            pause_menu: false,
+            data_page: 0,
+            data_body: None,
+            music: Music::new(),
         })
     }
 
@@ -236,9 +468,37 @@ impl Game {
         self.launch_clearance = false;
         self.dock_clearance = None;
         self.gear_down = true;
-        self.labels = false;
+        self.hud_mode = 0;
         self.rear = false;
         self.panel = Panel::View;
+        self.dest = "ross154".into();
+        self.cam_at = self.galaxy.get("ross154").position_ly;
+        self.arm_target = false;
+        self.paused = false;
+        self.pause_menu = false;
+        self.data_page = 0;
+        self.data_body = None;
+        self.map_page = MapPage::Galaxy;
+        self.map_tools = false;
+        self.focus = "star".into();
+        self.ap_body = None;
+        self.jump = None;
+        self.clouds.clear();
+        self.cloud_sel = None;
+        self.cheats_open = false;
+        self.cheat_sel = 0;
+        self.free_purchases = false;
+        self.infinite_fuel = false;
+        self.cheat_jump_ly = None;
+        self.kills = 0;
+        self.fines.clear();
+        self.police_misses = 0;
+        self.police_warned = false;
+        self.station_told = false;
+        self.god_mode = false;
+        self.traffic.clear();
+        self.spawned_traffic = false;
+        self.laser_wait = 0.0;
         self.message.clear();
         self.land_at_port("ross154_sirocco");
         self.face_opening_view();
@@ -446,6 +706,23 @@ impl Game {
                     self.screen = Screen::Title;
                 }
             }
+            Screen::Play if key == KeyCode::F11 => self.show_fps = !self.show_fps,
+            Screen::Play if self.cheats_open => self.cheat_key(key),
+            Screen::Play if self.pause_menu => {
+                if matches!(key, KeyCode::Escape | KeyCode::F1) {
+                    self.resume();
+                }
+            }
+            Screen::Play if self.paused => {
+                if key == KeyCode::Escape {
+                    self.pause_menu = true;
+                }
+            }
+            Screen::Play if self.jump.is_some() => {
+                if matches!(key, KeyCode::Space | KeyCode::Enter | KeyCode::Escape) {
+                    self.finish_jump();
+                }
+            }
             Screen::Play => self.play_key(key, shift),
         }
     }
@@ -455,9 +732,18 @@ impl Game {
     }
 
     pub fn mouse_move(&mut self, x: i32, y: i32) {
-        if self.rmb {
-            self.mouse_acc.0 += (x - self.mouse.0) as f64;
-            self.mouse_acc.1 += (y - self.mouse.1) as f64;
+        let dx = (x - self.mouse.0) as f64;
+        let dy = (y - self.mouse.1) as f64;
+        if self.lmb && self.panel == Panel::Map && self.map_page == MapPage::Galaxy && !self.paused {
+            if (x - self.drag_from.0).abs() + (y - self.drag_from.1).abs() > 5 {
+                self.dragging = true;
+            }
+            if self.dragging {
+                self.pan_chart(dx, dy);
+            }
+        } else if self.rmb {
+            self.mouse_acc.0 += dx;
+            self.mouse_acc.1 += dy;
         }
         self.mouse = (x, y);
     }
@@ -468,16 +754,135 @@ impl Game {
             return;
         }
         if !down {
+            let was_drag = self.dragging;
+            let on_chart = self.lmb && self.panel == Panel::Map && self.map_page == MapPage::Galaxy;
+            self.lmb = false;
+            self.dragging = false;
+            if on_chart && !was_drag && !self.paused {
+                self.click_at(self.mouse);
+            }
             return;
         }
-        let hit = self.hits.iter().rev().find(|(r, _)| r.contains(self.mouse.0, self.mouse.1)).map(|h| h.1);
+        if self.panel == Panel::Map && self.map_page == MapPage::Galaxy && self.mouse.1 < VIEW_H && !self.paused
+        {
+            self.lmb = true;
+            self.drag_from = self.mouse;
+            self.dragging = false;
+            return;
+        }
+        self.click_at(self.mouse);
+    }
+
+    fn click_at(&mut self, at: (i32, i32)) {
+        if self.paused && !self.pause_menu {
+            self.pause_menu = true;
+            return;
+        }
+        let hit = self.hits.iter().rev().find(|(r, _)| r.contains(at.0, at.1)).map(|h| h.1.clone());
         match hit {
             Some(Action::Key(k)) => self.key_down(k, false),
+            Some(Action::Vcr(0)) => self.pause_icon(),
             Some(Action::Vcr(i)) => self.set_vcr(i),
+            Some(Action::Pref(i)) => self.toggle_pref(i),
             Some(Action::Comms(i)) => self.comms_pick(i),
             Some(Action::Title(i)) => self.title_pick(i),
             Some(Action::Station(h)) => self.station_hit(h),
-            None => {}
+            Some(Action::Map(id)) => {
+                if !self.arm_target {
+                    self.cam_at = self.galaxy.get(&id).position_ly;
+                }
+                self.dest = id;
+                self.arm_target = false;
+            }
+            Some(Action::Body(id)) => {
+                self.focus = id.clone();
+                // The star can be centred, but the autopilot will not fly into it.
+                self.ap_body = if id == "star" { None } else { Some(id) };
+            }
+            Some(Action::Cheat(i)) => self.apply_cheat(i),
+            Some(Action::Cloud(i)) => self.cloud_sel = Some(i),
+            Some(Action::Info(id)) => self.data_body = Some(id),
+            None => {
+                if self.panel == Panel::View && self.mouse.1 < VIEW_H {
+                    self.cloud_sel = None;
+                }
+                if self.panel == Panel::Map && self.map_page == MapPage::Data && self.mouse.1 < VIEW_H {
+                    self.data_body = None;
+                }
+            }
+        }
+    }
+
+    /// First Escape or pause-icon click stops time. The next one opens the options screen.
+    fn escape_pressed(&mut self) {
+        self.hold_pause();
+    }
+
+    fn pause_icon(&mut self) {
+        if self.paused {
+            self.pause_menu = true;
+        } else {
+            self.hold_pause();
+        }
+    }
+
+    fn hold_pause(&mut self) {
+        if self.paused {
+            return;
+        }
+        self.vcr_was = self.vcr;
+        self.vcr = 0;
+        self.paused = true;
+    }
+
+    fn resume(&mut self) {
+        self.paused = false;
+        self.pause_menu = false;
+        self.vcr = if self.vcr_was == 0 { 1 } else { self.vcr_was };
+    }
+
+    fn show_names(&self) -> bool {
+        self.hud_mode == 0 || self.hud_mode == 1
+    }
+
+    fn show_tunnel(&self) -> bool {
+        self.prefs.tunnels && self.ap_body.is_some() && (self.hud_mode == 0 || self.hud_mode == 2)
+    }
+
+    /// Drag the galactic chart. Screen motion follows the grid, so the stars stay under the cursor.
+    fn pan_chart(&mut self, dx: f64, dy: f64) {
+        let sens = 1.0 / self.map_zoom.max(0.2);
+        let (sy, cy) = self.map_yaw.sin_cos();
+        let (_, cp) = self.map_pitch.sin_cos();
+        self.cam_at.x += (-dx * cy + dy * sy * cp) * sens;
+        self.cam_at.z += (-dx * sy - dy * cy * cp) * sens;
+    }
+
+    fn toggle_pref(&mut self, i: u8) {
+        let p = &mut self.prefs;
+        match i {
+            0..=3 => p.detail = i,
+            4 => p.sound = !p.sound,
+            5 => p.engine = !p.engine,
+            6 => p.station_sfx = !p.station_sfx,
+            7 => p.wind = !p.wind,
+            8 => p.beeps = !p.beeps,
+            9 => p.music = !p.music,
+            10 => p.music_hyper = !p.music_hyper,
+            11 => p.music_dock = !p.music_dock,
+            12 => p.music_battle = !p.music_battle,
+            13 => p.music_continuous = !p.music_continuous,
+            14 => p.dust = !p.dust,
+            15 => p.stars = !p.stars,
+            16 => p.lock_external = !p.lock_external,
+            17 => p.reverse_lr = !p.reverse_lr,
+            18 => p.reverse_ud = !p.reverse_ud,
+            19 => p.elite_controls = !p.elite_controls,
+            20 => p.tunnels = !p.tunnels,
+            21 => p.ship_tunnels = !p.ship_tunnels,
+            22 => p.extensions = !p.extensions,
+            23..=32 => p.track = i - 23,
+            _ => {}
         }
     }
 
@@ -501,8 +906,32 @@ impl Game {
         }
     }
 
+    /// Pause toggles. Any other button selects that Stardreamer rate:
+    /// 1x, 10x, 100x, 1000x, 10000x.
     fn set_vcr(&mut self, i: usize) {
-        self.vcr = i.min(5);
+        let i = i.min(5);
+        self.vcr = if i == 0 {
+            if self.vcr == 0 { 1 } else { 0 }
+        } else {
+            i
+        };
+    }
+
+    /// Shift+F1 .. Shift+F5, as the manual's time control: 1x through 10000x.
+    fn set_stardreamer(&mut self, tier: usize) {
+        self.vcr = (tier + 1).min(5);
+    }
+
+    /// Wheel up zooms in on whichever chart is open.
+    pub fn wheel(&mut self, lines: f64) {
+        if self.screen != Screen::Play || self.panel != Panel::Map || lines.abs() < 1e-4 {
+            return;
+        }
+        let factor = 1.2_f64.powf(lines);
+        match self.map_page {
+            MapPage::Galaxy | MapPage::Data => self.map_zoom = (self.map_zoom * factor).clamp(1.5, 64.0),
+            MapPage::System => self.sys_zoom = (self.sys_zoom * factor).clamp(0.15, 80.0),
+        }
     }
 
     pub fn in_dock(&self) -> bool {
@@ -511,31 +940,61 @@ impl Game {
 
     fn play_key(&mut self, key: KeyCode, shift: bool) {
         if shift {
-            let slot = match key {
+            let tier = match key {
                 KeyCode::F1 => Some(0),
                 KeyCode::F2 => Some(1),
                 KeyCode::F3 => Some(2),
                 KeyCode::F4 => Some(3),
                 KeyCode::F5 => Some(4),
-                KeyCode::F6 => Some(5),
                 _ => None,
             };
-            if let Some(s) = slot {
-                self.set_vcr(s);
+            if let Some(t) = tier {
+                self.set_stardreamer(t);
                 return;
             }
         }
+        if matches!(key, KeyCode::Backquote | KeyCode::F12) {
+            self.cheats_open = true;
+            self.mouse_acc = (0.0, 0.0);
+            return;
+        }
         match key {
-            KeyCode::Escape => self.screen = Screen::Title,
+            KeyCode::Escape => self.escape_pressed(),
             KeyCode::F1 => {
                 if self.panel == Panel::View {
                     self.rear = !self.rear;
                 } else if self.message_t.is_infinite() {
                     self.clear_msg();
                 }
+                self.map_tools = false;
                 self.panel = Panel::View;
             }
-            KeyCode::F2 => self.msg("Galactic Map is not in this build yet."),
+            KeyCode::F2 => {
+                self.map_tools = false;
+                match (self.panel, self.map_page) {
+                    (Panel::Map, MapPage::Galaxy) => self.map_page = MapPage::System,
+                    (Panel::Map, MapPage::System) => self.map_page = MapPage::Galaxy,
+                    _ => {
+                        self.map_page = MapPage::Galaxy;
+                        self.panel = Panel::Map;
+                    }
+                }
+            }
+            KeyCode::F6 if self.panel == Panel::Map && self.map_page == MapPage::Data => {
+                self.map_page = MapPage::Galaxy;
+            }
+            KeyCode::F6 => {
+                self.panel = Panel::Map;
+                self.map_page = MapPage::Data;
+                self.data_page = 0;
+                self.data_body = None;
+            }
+            KeyCode::F7 if self.panel == Panel::Map && self.map_page == MapPage::Data => {
+                self.data_page = 1;
+            }
+            KeyCode::F8 if self.panel == Panel::Map && self.map_page == MapPage::Data => {
+                self.data_page = 2;
+            }
             KeyCode::F3 => {
                 self.inv_page = if self.panel == Panel::Inventory { (self.inv_page + 1) % 3 } else { 0 };
                 if self.message_t.is_infinite() {
@@ -551,14 +1010,46 @@ impl Game {
             KeyCode::F4 => {
                 self.panel = if self.panel == Panel::Comms { Panel::View } else { Panel::Comms };
             }
+            KeyCode::F7 if self.panel == Panel::Map => self.map_fn(7),
             KeyCode::F7 => self.flight_control(),
+            // Tools keep F8. Once a system is targeted, F8 is the hyperspace control
+            // on the chart as well as the view. Otherwise the chart zooms.
+            KeyCode::F8 if self.panel == Panel::Map && self.map_tools => self.map_fn(8),
+            KeyCode::F8 if self.hyperspace_selected() => self.try_jump(),
+            KeyCode::F8 if self.panel == Panel::Map => self.map_fn(8),
+            KeyCode::F8 if self.panel == Panel::View => self.try_jump(),
+            KeyCode::F9 if self.panel == Panel::Map && !self.map_tools => self.map_tools = true,
+            KeyCode::F9 if self.panel == Panel::Map => {}
             KeyCode::F9 => {
                 if matches!(self.wh, Where::Flying) {
                     self.gear_down = !self.gear_down;
                     self.msg(if self.gear_down { "Undercarriage lowered" } else { "Undercarriage raised" });
                 }
             }
-            KeyCode::F10 => self.labels = !self.labels,
+            KeyCode::F10 if self.panel == Panel::Map => self.map_fn(10),
+            KeyCode::F10 => self.hud_mode = (self.hud_mode + 1) % 4,
+            KeyCode::KeyH => self.try_jump(),
+            KeyCode::Space if matches!(self.wh, Where::Flying) => self.fire_laser(),
+            KeyCode::KeyC if self.panel == Panel::Map && self.map_page == MapPage::Galaxy => {
+                self.dest = self.sys_id.clone();
+                self.cam_at = self.galaxy.get(&self.dest).position_ly;
+            }
+            KeyCode::ArrowUp if self.panel == Panel::Map && self.map_page == MapPage::Galaxy => {
+                self.step_dest(DVec3::Z);
+                self.map_repeat = 0.32;
+            }
+            KeyCode::ArrowDown if self.panel == Panel::Map && self.map_page == MapPage::Galaxy => {
+                self.step_dest(-DVec3::Z);
+                self.map_repeat = 0.32;
+            }
+            KeyCode::ArrowRight if self.panel == Panel::Map && self.map_page == MapPage::Galaxy => {
+                self.step_dest(DVec3::X);
+                self.map_repeat = 0.32;
+            }
+            KeyCode::ArrowLeft if self.panel == Panel::Map && self.map_page == MapPage::Galaxy => {
+                self.step_dest(-DVec3::X);
+                self.map_repeat = 0.32;
+            }
             KeyCode::Digit1 | KeyCode::Digit2 | KeyCode::Digit3 | KeyCode::Digit4 | KeyCode::Digit5
                 if self.panel == Panel::Comms =>
             {
@@ -586,12 +1077,40 @@ impl Game {
         }
     }
 
-    /// F7, following the icon: take off when landed, otherwise Manual <-> Engines Off.
+    /// Drive stats, with the admin range override applied.
+    fn flight_stats(&self) -> frontier_sim::flight::ShipStats {
+        let mut stats = self.yard.stats(&self.fitted);
+        if let Some(ly) = self.cheat_jump_ly {
+            stats.jump_range_ly = ly;
+        }
+        stats
+    }
+
+    /// A different system is targeted, a drive is fitted, and the ship is in space.
+    /// The icon stays hidden on the ground and in a docking bay.
+    fn hyperspace_selected(&self) -> bool {
+        matches!(self.wh, Where::Flying)
+            && self.dest != self.sys_id
+            && self.flight_stats().drive_h > 0.0
+    }
+
+    /// The manual puts Autopilot in the F7 cycle only with the unit fitted and a target locked.
+    fn offer_autopilot(&self) -> bool {
+        matches!(self.wh, Where::Flying)
+            && self.fitted.has("autopilot")
+            && (self.ap_body.is_some() || self.dest != self.sys_id)
+    }
+
+    /// F7, following the icon: take off when landed. In flight the cycle is
+    /// Manual, Engines Off, and Autopilot once a target is locked.
     fn flight_control(&mut self) {
         match self.wh.clone() {
             Where::Landed { port, .. } => {
                 if port.is_some() && !self.launch_clearance {
                     self.msg("Launch clearance has not been granted.");
+                    if self.enforces_law() {
+                        self.add_fine(400);
+                    }
                 }
                 self.launch_clearance = false;
                 self.wh = Where::Flying;
@@ -602,16 +1121,81 @@ impl Game {
             }
             Where::Docked { .. } => {}
             Where::Flying => {
-                self.fm.controls.mode = match self.fm.controls.mode {
+                let offer = self.offer_autopilot();
+                let prev = self.fm.controls.mode;
+                let next = match prev {
+                    FlightMode::Autopilot => FlightMode::EnginesOff,
+                    FlightMode::EnginesOff => FlightMode::Manual,
+                    FlightMode::Manual | FlightMode::TakeOff if offer => FlightMode::Autopilot,
                     FlightMode::Manual | FlightMode::TakeOff => FlightMode::EnginesOff,
-                    FlightMode::EnginesOff => {
-                        let rf = self.reference(self.stardate.days);
-                        let v = self.ship.velocity - rf.vel;
-                        self.fm.controls.set_speed = v.dot(self.ship.orientation.col(2));
-                        FlightMode::Manual
-                    }
                 };
+                if prev == FlightMode::EnginesOff {
+                    let rf = self.reference(self.stardate.days);
+                    let v = self.ship.velocity - rf.vel;
+                    self.fm.controls.set_speed = v.dot(self.ship.orientation.col(2));
+                }
+                // A galactic target has no place to fly to. Autopilot makes the jump.
+                if next == FlightMode::Autopilot && self.ap_body.is_none() {
+                    self.try_jump();
+                    if self.dest != self.sys_id {
+                        self.fm.controls.mode = FlightMode::Manual;
+                    }
+                    return;
+                }
+                if next == FlightMode::EnginesOff {
+                    self.fm.controls.thrust = 0.0;
+                }
+                self.fm.controls.mode = next;
             }
+        }
+    }
+
+    /// Point the nose at the locked body and cruise, holding short of the surface.
+    fn steer_autopilot(&mut self) {
+        let Some(id) = self.ap_body.clone() else {
+            self.fm.controls.mode = FlightMode::Manual;
+            return;
+        };
+        let Some(body) = self.frames.bodies.get(&id).cloned() else {
+            self.ap_body = None;
+            self.fm.controls.mode = FlightMode::Manual;
+            return;
+        };
+        let days = self.stardate.days;
+        let me = self.frames.ship_world_pos(&self.ship, days);
+        let place = self.frames.world_position(&id, days);
+        let (aim, hold) = if body.is_starport {
+            let up = body
+                .parent_id
+                .as_deref()
+                .map(|p| place - self.frames.world_position(p, days))
+                .and_then(|v| v.try_normalize())
+                .unwrap_or(DVec3::Y);
+            (place + up * 20.0, 2.0)
+        } else if body.is_station {
+            (place, (body.radius_km * 4.0).max(8.0))
+        } else {
+            (place, body.radius_km + 80.0)
+        };
+        let delta = aim - me;
+        let dist = delta.length();
+        if dist < hold {
+            let c = &mut self.fm.controls;
+            c.pitch = 0.0;
+            c.yaw = 0.0;
+            c.roll = 0.0;
+            c.set_speed = 0.0;
+            return;
+        }
+        let (pitch, yaw, roll, align) = steer_toward(self.ship.orientation, delta);
+        let cruise = (dist * 0.002).clamp(0.05, 8.0);
+        let c = &mut self.fm.controls;
+        c.pitch = pitch;
+        c.yaw = yaw;
+        c.roll = roll;
+        c.set_speed = if align > 0.85 { cruise } else { 0.0 };
+        if (body.is_station || body.is_starport) && dist < 80.0 {
+            self.gear_down = true;
         }
     }
 
@@ -767,7 +1351,9 @@ impl Game {
     // ---------------------------------------------------------------- update
 
     pub fn update(&mut self, dt: f64) {
+        self.note_frame(dt);
         self.anim_t += dt;
+        self.sync_music();
         match self.screen {
             Screen::Title | Screen::Destroyed => {
                 self.title_t += dt;
@@ -775,20 +1361,54 @@ impl Game {
             }
             Screen::Play => {}
         }
+        if self.cheats_open || self.paused {
+            self.mouse_acc = (0.0, 0.0);
+            return;
+        }
+        if self.jump.is_some() {
+            let done = {
+                let jump = self.jump.as_mut().unwrap();
+                jump.t += dt;
+                jump.t >= JUMP_SECS
+            };
+            if done {
+                self.finish_jump();
+            }
+            return;
+        }
+        self.clouds.retain(|c| self.stardate.days <= c.expires);
+        if self.cloud_sel.is_some_and(|i| i >= self.clouds.len()) {
+            self.cloud_sel = None;
+        }
         if self.message_t > 0.0 {
             self.message_t -= dt;
             if self.message_t <= 0.0 {
                 self.clear_msg();
             }
         }
+        if self.panel == Panel::Map {
+            let (mx, my) = std::mem::take(&mut self.mouse_acc);
+            if self.map_page == MapPage::Galaxy {
+                self.map_yaw += mx * 0.008;
+                self.map_pitch = (self.map_pitch + my * 0.008).clamp(-1.4, 1.4);
+                self.walk_chart(dt);
+            } else {
+                self.sys_yaw += mx * 0.008;
+                self.sys_pitch = (self.sys_pitch + my * 0.008).clamp(-1.4, 1.4);
+            }
+        }
         self.read_controls(dt);
+        if self.fm.controls.mode == FlightMode::Autopilot && matches!(self.wh, Where::Flying) {
+            self.steer_autopilot();
+        }
 
-        // The on-board computer returns to normal time near the ground or a station.
-        if matches!(self.wh, Where::Flying) && self.vcr > 1 {
+        // The on-board computer returns to real time on the deck or in a station's slot.
+        // The chart keeps whatever rate was selected, so the orrery can be run forward.
+        if self.panel != Panel::Map && matches!(self.wh, Where::Flying) && self.vcr > 1 {
             let days = self.stardate.days;
             let world = self.frames.ship_world_pos(&self.ship, days);
-            let near_station = self.nearest_station(world, days).is_some_and(|s| s.2 < 20.0);
-            if near_station || self.altitude_km() < 5.0 {
+            let near_station = self.nearest_station(world, days).is_some_and(|s| s.2 < 6.0);
+            if near_station || self.altitude_km() < 0.4 {
                 self.vcr = 1;
             }
         }
@@ -798,11 +1418,16 @@ impl Game {
         }
         match self.wh {
             Where::Flying => {
+                self.ensure_traffic();
                 let steps = ((sim_dt / 0.1).ceil() as usize).clamp(1, 4000);
                 let h = sim_dt / steps as f64;
                 for _ in 0..steps {
                     self.stardate.days += h / 86400.0;
                     if !self.step_flight(h) {
+                        break;
+                    }
+                    self.step_traffic(h);
+                    if self.screen != Screen::Play {
                         break;
                     }
                 }
@@ -822,6 +1447,8 @@ impl Game {
         let up = k(KeyCode::Enter) && !(self.panel == Panel::Comms && self.in_dock());
         let down = k(KeyCode::ShiftRight);
         let (mx, my) = std::mem::take(&mut self.mouse_acc);
+        let my = if self.prefs.reverse_ud { -my } else { my };
+        let mx = if self.prefs.reverse_lr { -mx } else { mx };
         pitch += my * 0.06;
         yaw += mx * 0.06;
         let c = &mut self.fm.controls;
@@ -988,7 +1615,112 @@ impl Game {
 
     // ---------------------------------------------------------------- drawing
 
+    fn draw_pause(&mut self, cv: &mut Canvas) {
+        cv.clear([40, 40, 40]);
+        let p = self.prefs.clone();
+        let opt = crate::font::SMALL;
+        self.a.font.draw(cv, "Level", 16, 10, opt, palette::HUD_WHITE);
+        self.a.font.draw(cv, "Shape Detail:", 78, 10, opt, palette::CON_GREEN);
+        let levels = ["Low", "Medium", "High", "Very High"];
+        for (i, name) in levels.iter().enumerate() {
+            self.pref_box(cv, 16, 36 + i as i32 * 22, p.detail == i as u8, i as u8);
+            self.a.font.draw(cv, name, 36, 34 + i as i32 * 22, opt, palette::HUD_WHITE);
+        }
+        self.a.font.draw(cv, "Sounds:", 250, 10, opt, palette::CON_GREEN);
+        let sounds = [
+            (4u8, "Sound effects on", p.sound),
+            (5, "Engine sound", p.engine),
+            (6, "Space station", p.station_sfx),
+            (7, "Wind noise", p.wind),
+            (8, "Icon beeps", p.beeps),
+        ];
+        for (i, (id, name, on)) in sounds.iter().enumerate() {
+            self.pref_box(cv, 250, 36 + i as i32 * 22, *on, *id);
+            self.a.font.draw(cv, name, 270, 34 + i as i32 * 22, opt, palette::HUD_WHITE);
+        }
+        self.a.font.draw(cv, "Music:", 470, 10, opt, palette::CON_GREEN);
+        let music = [
+            (9u8, "Music on", p.music),
+            (10, "Music after hyperspace", p.music_hyper),
+            (11, "Docking music", p.music_dock),
+            (12, "Music in battles", p.music_battle),
+            (13, "Continuous music", p.music_continuous),
+        ];
+        for (i, (id, name, on)) in music.iter().enumerate() {
+            self.pref_box(cv, 470, 36 + i as i32 * 22, *on, *id);
+            self.a.font.draw(cv, name, 490, 34 + i as i32 * 22, opt, palette::HUD_WHITE);
+        }
+        self.a.font.draw(cv, "Other Options:", 16, 168, opt, palette::CON_GREEN);
+        let other = [
+            (14u8, "Space dust, clouds etc.", p.dust),
+            (15, "Background stars", p.stars),
+            (16, "Lock external view to ship", p.lock_external),
+            (17, "Reverse left-right controls", p.reverse_lr),
+            (18, "Reverse up-down controls", p.reverse_ud),
+            (19, "Elite control method in space", p.elite_controls),
+            (20, "Show targeting tunnels", p.tunnels),
+            (21, "Allow targeting tunnels for ships", p.ship_tunnels),
+            (22, "Use filename extensions", p.extensions),
+        ];
+        for (i, (id, name, on)) in other.iter().enumerate() {
+            self.pref_box(cv, 16, 194 + i as i32 * 20, *on, *id);
+            self.a.font.draw(cv, name, 36, 192 + i as i32 * 20, opt, palette::HUD_WHITE);
+        }
+        self.a.font.draw(cv, "Choose Music From:", 300, 168, opt, palette::CON_GREEN);
+        let tracks = [
+            "Greig - In the Hall of the Mountain King",
+            "Lowe - Frontier Main Theme",
+            "Mussorgsky - Baba Yaga",
+            "Mussorgsky - Night on the Bare Mountain",
+            "Lowe - Frontier Second Theme",
+            "Wagner - Ride of the Valkyries",
+            "Strauss - Blue Danube",
+            "Mussorgsky - Great Gates of Kiev",
+        ];
+        for (i, name) in tracks.iter().enumerate() {
+            self.pref_box(cv, 300, 194 + i as i32 * 20, p.track == i as u8, 23 + i as u8);
+            self.a.font.draw(cv, name, 320, 192 + i as i32 * 20, opt, palette::HUD_WHITE);
+        }
+    }
+
+    fn pref_box(&mut self, cv: &mut Canvas, x: i32, y: i32, on: bool, id: u8) {
+        let r = Rect::new(x, y, 12, 12);
+        cv.rect(r, palette::BLACK);
+        if on {
+            cv.fill_rect(Rect::new(x + 2, y + 2, 8, 8), palette::ROSTER_RED);
+        } else {
+            cv.fill_rect(Rect::new(x + 2, y + 2, 8, 8), palette::GREY_102);
+        }
+        self.hits.push((Rect::new(x - 2, y - 2, 16, 16), Action::Pref(id)));
+    }
+
+    fn note_frame(&mut self, dt: f64) {
+        if !(0.0..1.0).contains(&dt) {
+            return;
+        }
+        self.fps_acc += dt;
+        self.fps_n += 1;
+        if self.fps_acc >= 0.3 {
+            self.fps = self.fps_n as f64 / self.fps_acc;
+            self.fps_acc = 0.0;
+            self.fps_n = 0;
+        }
+    }
+
+    fn paint_fps(&self, cv: &mut Canvas) {
+        if !self.show_fps {
+            return;
+        }
+        let text = format!("FPS {:.0}", self.fps);
+        self.a.font.draw(cv, &text, 4, 4, crate::font::SMALL, palette::CON_GREEN);
+    }
+
     pub fn draw(&mut self, cv: &mut Canvas) {
+        self.draw_frame(cv);
+        self.paint_fps(cv);
+    }
+
+    fn draw_frame(&mut self, cv: &mut Canvas) {
         self.hits.clear();
         match self.screen {
             Screen::Title => {
@@ -1008,6 +1740,20 @@ impl Game {
             }
             Screen::Play => {}
         }
+        if self.pause_menu {
+            self.draw_pause(cv);
+            return;
+        }
+        if self.cheats_open {
+            self.draw_cheats(cv);
+            return;
+        }
+        if self.jump.is_some() {
+            let t = self.jump.as_ref().map(|j| j.t).unwrap_or(0.0);
+            draw_hyperspace(cv, t / JUMP_SECS);
+            self.draw_console(cv);
+            return;
+        }
         cv.reset_clip();
         match self.panel {
             Panel::View => self.draw_view(cv),
@@ -1018,11 +1764,18 @@ impl Game {
                 let rows = screens::flight_comms(cv, &self.a, &opts);
                 self.hits.extend(rows.into_iter().map(|(r, i)| (r, Action::Comms(i))));
             }
+            Panel::Map => self.draw_map(cv),
             Panel::Inventory => {
                 let hold = self.hold();
                 match self.inv_page {
                     0 => screens::equipment_status(cv, &self.a, &self.fitted, &self.yard, &hold, self.anim_t),
-                    1 => screens::profile(cv, &self.a, self.anim_t),
+                    1 => screens::profile(
+                        cv,
+                        &self.a,
+                        self.anim_t,
+                        frontier_sim::frontier::combat_rank(self.kills),
+                        !self.wanted_here(),
+                    ),
                     _ => {
                         let rows: Vec<RosterRow> = self
                             .contracts
@@ -1077,14 +1830,75 @@ impl Game {
         }
     }
 
-    fn draw_view(&self, cv: &mut Canvas) {
+    /// The remnant the fitted analyser is reading: the one clicked, else the nearest in range.
+    fn cloud_index(&self) -> Option<usize> {
+        if !self.fitted.has("cloud_analyser") {
+            return None;
+        }
+        let days = self.stardate.days;
+        let here = self.sys_id.clone();
+        let me = self.frames.ship_world_pos(&self.ship, days);
+        let star = self.frames.world_position("star", days);
+        let near = |c: &Residue| {
+            if c.system != here || days > c.expires {
+                return None;
+            }
+            let d = (star + c.pos - me).length();
+            (d < CLOUD_RANGE_KM).then_some(d)
+        };
+        if let Some(i) = self.cloud_sel {
+            if self.clouds.get(i).and_then(near).is_some() {
+                return Some(i);
+            }
+        }
+        self.clouds
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| near(c).map(|d| (d, i)))
+            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+            .map(|(_, i)| i)
+    }
+
+    /// Top-right of the view: where the ship came from, and when it arrived.
+    fn draw_cloud_readout(&self, cv: &mut Canvas) {
+        let Some(c) = self.cloud_index().and_then(|i| self.clouds.get(i)) else {
+            return;
+        };
+        let lines = [
+            c.origin.clone(),
+            Stardate::new(c.arrived).format(),
+            format!("{:.0}t", c.mass_t),
+        ];
+        for (i, line) in lines.iter().enumerate() {
+            let w = self.a.font.width(line, crate::font::SMALL);
+            self.a.font.draw(
+                cv,
+                line,
+                W - 8 - w,
+                8 + i as i32 * 16,
+                crate::font::SMALL,
+                palette::HUD_WHITE,
+            );
+        }
+    }
+
+    fn draw_view(&mut self, cv: &mut Canvas) {
         let view = View::new(Rect::new(0, 0, W, VIEW_H));
         cv.set_clip(view.rect);
         let days = self.stardate.days;
         let rot = self.camera();
         let cam_world = self.frames.ship_world_pos(&self.ship, days);
+        let star_w = self.frames.world_position("star", days);
+        let here = self.sys_id.clone();
+        let residues: Vec<(usize, DVec3)> = self
+            .clouds
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.system == here && days <= c.expires)
+            .map(|(i, c)| (i, star_w + c.pos))
+            .collect();
         let sys = self.system();
-        let star_rel = self.frames.world_position("star", days) - cam_world;
+        let star_rel = star_w - cam_world;
 
         // Atmosphere: fade bands out with height, dim them at night.
         let mut sky_fade = 0.0;
@@ -1105,7 +1919,7 @@ impl Game {
         } else {
             cv.fill_rect(view.rect, palette::BLACK);
         }
-        if sky_fade < 0.6 || day < 0.3 {
+        if self.prefs.stars && (sky_fade < 0.6 || day < 0.3) {
             render3d::draw_stars(cv, &view, &rot, &self.stars);
         }
 
@@ -1151,7 +1965,33 @@ impl Game {
                 near,
             });
         }
+        for (_, w) in &residues {
+            bodies.push(SphereBody {
+                center: *w - cam_world,
+                radius: 18.0,
+                color: [255, 214, 255],
+                sea: None,
+                kind: BodyKind::Star,
+                seed: 1,
+                spin: DMat3::IDENTITY,
+                rings: None,
+                near: None,
+            });
+        }
         render3d::draw_spheres(cv, &view, &rot, &mut bodies, star_rel);
+
+        let mut ship_meshes = Vec::new();
+        for npc in self.traffic.iter().filter(|n| n.alive) {
+            let pos = self.frames.ship_world_pos(&npc.state, days) - cam_world;
+            if pos.length() < 250.0 {
+                let colour = match npc.role {
+                    "pirate" => [[180, 40, 40], [140, 30, 30], [80, 16, 16]],
+                    "police" => [[40, 80, 180], [30, 60, 140], [16, 30, 80]],
+                    _ => [[160, 160, 160], [110, 110, 110], [60, 60, 60]],
+                };
+                ship_meshes.push((meshes::eagle_in(colour), pos, npc.state.orientation * 0.04));
+            }
+        }
 
         let mut instances = Vec::new();
         let mut station_orients = Vec::new();
@@ -1164,6 +2004,9 @@ impl Game {
         for (pos, orient) in &station_orients {
             instances.push(Instance { mesh: &self.station_mesh, pos: *pos, orient: *orient });
         }
+        for (mesh, pos, orient) in &ship_meshes {
+            instances.push(Instance { mesh, pos: *pos, orient: *orient });
+        }
         for p in &sys.planets {
             for sp in &p.starports {
                 let pos = self.frames.world_position(&sp.id, days) - cam_world;
@@ -1175,9 +2018,25 @@ impl Game {
         }
         render3d::draw_meshes(cv, &view, &rot, &instances, star_rel, &occluders);
 
-        if self.labels {
+        if self.show_names() {
             self.draw_labels(cv, &view, &rot, cam_world, &occluders);
         }
+        if self.show_tunnel() {
+            self.draw_tunnel(cv, &view, &rot, cam_world);
+        }
+        for (i, w) in &residues {
+            let cam = render3d::to_cam(&rot, *w - cam_world);
+            if let Some((x, y)) = view.project(cam) {
+                let (x, y) = (x as i32, y as i32);
+                if view.rect.contains(x, y) {
+                    self.hits.push((Rect::new(x - 10, y - 10, 20, 20), Action::Cloud(*i)));
+                    if self.show_names() {
+                        self.a.font.draw(cv, "Hyperspace cloud", x + 8, y - 6, crate::font::SMALL, palette::HUD_WHITE);
+                    }
+                }
+            }
+        }
+        self.draw_cloud_readout(cv);
         cv.reset_clip();
         if !self.rear {
             self.draw_sights(cv, &view, &rot);
@@ -1206,6 +2065,91 @@ impl Game {
                     self.a.font.draw(cv, &name, x + 6, y - 6, CONSOLE, palette::HUD_WHITE);
                 }
             }
+        }
+    }
+
+    /// Nested squares along the path to the locked station or planet, with range and ETA.
+    fn draw_tunnel(&self, cv: &mut Canvas, view: &View, rot: &DMat3, cam_world: DVec3) {
+        let Some(id) = self.ap_body.clone() else { return };
+        let days = self.stardate.days;
+        let rel = self.frames.world_position(&id, days) - cam_world;
+        let dist = rel.length();
+        if dist < 0.05 {
+            return;
+        }
+        let dir = rel / dist;
+        let cam = render3d::to_cam(rot, rel);
+        let range = if dist >= 15_000_000.0 {
+            format!("{:.2} AU", dist / 149_597_870.7)
+        } else if dist >= 100.0 {
+            format!("{:.0} km", dist)
+        } else {
+            format!("{:.1} km", dist)
+        };
+        let closing = self.frames.ship_world_vel(&self.ship, days).dot(dir);
+        let eta = if closing > 0.02 {
+            let secs = dist / closing;
+            if secs < 90.0 {
+                format!("ETA {secs:.0}s")
+            } else if secs < 3600.0 {
+                format!("ETA {:.0}m", secs / 60.0)
+            } else if secs < 86_400.0 {
+                format!("ETA {}:{:02}", (secs / 3600.0) as i32, ((secs % 3600.0) / 60.0) as i32)
+            } else {
+                format!("ETA {:.1}d", secs / 86_400.0)
+            }
+        } else {
+            "ETA --".into()
+        };
+        if cam.z <= 0.05 {
+            self.a.font.draw_centered(cv, "Target Behind", W / 2, 80, CONSOLE, palette::CON_GREEN);
+            self.a.font.draw_centered(cv, &range, W / 2, 104, CONSOLE, palette::CON_GREEN);
+            return;
+        }
+        let right = dir.cross(rot.col(1)).try_normalize().unwrap_or(rot.col(0));
+        let up = right.cross(dir);
+        let green = palette::CON_GREEN;
+        for i in 1..=7 {
+            let d = dist * (i as f64 / 8.0);
+            let half = (d * 0.11).clamp(0.15, dist * 0.2);
+            let c = dir * d;
+            let corners = [
+                c + (right + up) * half,
+                c + (-right + up) * half,
+                c + (-right - up) * half,
+                c + (right - up) * half,
+            ];
+            let pts: Vec<Option<(i32, i32)>> = corners
+                .iter()
+                .map(|p| {
+                    view.project(render3d::to_cam(rot, *p)).map(|(x, y)| (x as i32, y as i32))
+                })
+                .collect();
+            if pts.iter().all(Option::is_some) {
+                for k in 0..4 {
+                    let a = pts[k].unwrap();
+                    let b = pts[(k + 1) % 4].unwrap();
+                    cv.line(a.0, a.1, b.0, b.1, green);
+                }
+            }
+        }
+        if let Some((x, y)) = view.project(cam) {
+            let (x, y) = (x as i32, y as i32);
+            let inside = view.rect.contains(x, y);
+            let (tx, ty) = if inside {
+                (x, y)
+            } else {
+                let cx = view.rect.x + view.rect.w / 2;
+                let cy = view.rect.y + view.rect.h / 2;
+                let (dx, dy) = ((x - cx) as f64, (y - cy) as f64);
+                let scale = (view.rect.w as f64 * 0.45) / dx.abs().max(dy.abs()).max(1.0);
+                (cx + (dx * scale) as i32, cy + (dy * scale) as i32)
+            };
+            if !inside {
+                cv.line(W / 2, VIEW_H / 2, tx, ty, green);
+            }
+            self.a.font.draw(cv, &range, tx + 10, ty - 8, CONSOLE, green);
+            self.a.font.draw(cv, &eta, tx + 10, ty + 12, CONSOLE, green);
         }
     }
 
@@ -1272,7 +2216,11 @@ impl Game {
             Where::Docked { .. } => Some("F7 Empty.png"),
             Where::Flying => Some(match self.fm.controls.mode {
                 FlightMode::EnginesOff => "console_icons/f7_manual.png",
-                _ => "console_icons/f7_engines_off.png",
+                FlightMode::Autopilot => "console_icons/f7_engines_off.png",
+                FlightMode::Manual | FlightMode::TakeOff if self.offer_autopilot() => {
+                    "console_icons/f7_autopilot.png"
+                }
+                FlightMode::Manual | FlightMode::TakeOff => "console_icons/f7_engines_off.png",
             }),
         };
         let f9 = match &self.wh {
@@ -1280,12 +2228,36 @@ impl Game {
             _ if self.gear_down => "F9 Landing Gear Up.png",
             _ => "F9 Landing Down.png",
         };
-        let f10 = if self.labels { "F10 Text Off.png" } else { "F10 Text On.png" };
+        let f10 = if self.show_names() { "F10 Text Off.png" } else { "F10 Text On.png" };
         // Off the 3D view the original leaves F7-F10 as blank plates.
-        let right = if self.panel == Panel::View {
-            [f7, Some("F8 Empty.png"), Some(f9), Some(f10)]
-        } else {
-            [Some("F7 Empty.png"), Some("F8 Empty.png"), Some("F9 Empty.png"), Some("F10 Empty.png")]
+        let hyper = self.hyperspace_selected().then_some("console_icons/f8_hyperspace.png");
+        let right = match self.panel {
+            Panel::View => [f7, hyper, Some(f9), Some(f10)],
+            Panel::Map if self.map_page == MapPage::Galaxy && self.map_tools => [
+                Some("F7 Settings.png"),
+                Some("F8 Settings.png"),
+                Some("F9 Settings.png"),
+                Some("F10 Settings.png"),
+            ],
+            Panel::Map if self.map_page == MapPage::Galaxy => [
+                Some("F7 Galatic Map.png"),
+                Some(hyper.unwrap_or("F8 Galactic Map.png")),
+                Some("F9 Galactic Map.png"),
+                Some("F10 Galactic Map.png"),
+            ],
+            Panel::Map if self.map_tools => [
+                Some("F7 Empty.png"),
+                Some("F8 Settings.png"),
+                Some("F9 Empty.png"),
+                Some("F10 Settings.png"),
+            ],
+            Panel::Map => [
+                Some("F7 Map.png"),
+                Some(hyper.unwrap_or("F8 Map.png")),
+                Some("F9 Map.png"),
+                Some("F10 Map.png"),
+            ],
+            _ => [Some("F7 Empty.png"), Some("F8 Empty.png"), Some("F9 Empty.png"), Some("F10 Empty.png")],
         };
         let upper = match &self.wh {
             Where::Landed { .. } => "Landed",
@@ -1294,6 +2266,7 @@ impl Game {
                 FlightMode::TakeOff => "Take Off",
                 FlightMode::Manual => "Manual Control",
                 FlightMode::EnginesOff => "Engines Off",
+                FlightMode::Autopilot => "Autopilot",
             },
         };
         let lower = match self.panel {
@@ -1301,6 +2274,9 @@ impl Game {
             Panel::View => "Front View",
             Panel::Comms => "Comms Link",
             Panel::Inventory => "Inventory",
+            Panel::Map if self.map_page == MapPage::System => "System Map",
+            Panel::Map if self.map_page == MapPage::Data => "System Data",
+            Panel::Map => "Galactic Map",
         };
 
         let mut contacts = Vec::new();
@@ -1311,6 +2287,15 @@ impl Game {
             let rel = self.frames.world_position(&st.id, days) - world;
             contacts.push(ScanContact { rel: o.transpose() * rel, color: palette::HUD_WHITE });
         }
+        for npc in self.traffic.iter().filter(|n| n.alive) {
+            let rel = self.frames.ship_world_pos(&npc.state, days) - world;
+            let color = match npc.role {
+                "pirate" => palette::ROSTER_RED,
+                "police" => [80, 140, 255],
+                _ => palette::CON_GREEN,
+            };
+            contacts.push(ScanContact { rel: o.transpose() * rel, color });
+        }
         (contacts, right, upper, lower)
     }
 
@@ -1318,14 +2303,21 @@ impl Game {
         let (contacts, right, upper, lower) = self.console_state();
         // F3 shows the page it will turn to next.
         let next_inv = if self.panel == Panel::Inventory { (self.inv_page + 1) % 3 } else { 0 };
+        let f2 = match (self.panel, self.map_page) {
+            (Panel::Map, MapPage::Galaxy) | (Panel::Map, MapPage::Data) => "F2 Map.png",
+            (Panel::Map, MapPage::System) => "F2 galactic Map.png",
+            _ => "F2 galactic Map.png",
+        };
         let left = [
             if self.rear { "F1 Rear View.png" } else { "F1 Front View.png" },
-            "F2 galactic Map.png",
+            f2,
             ["F3 Ship Status.png", "F3 Captain Status.png", "F3 Cargo Hold.png"][next_inv],
             "F4 Comms.png",
         ];
-        let show_scanner = self.panel != Panel::Comms || !self.in_dock();
+        let show_scanner = self.panel != Panel::Map && (self.panel != Panel::Comms || !self.in_dock());
         let face = if self.message_face { self.a.portraits.get("msg_station") } else { None };
+        let map_lines = (self.panel == Panel::Map).then(|| self.map_lines());
+        let message = map_lines.as_deref().unwrap_or(&self.message);
         let st = ConsoleState {
             stardate: self.stardate.format(),
             vcr_active: self.vcr,
@@ -1333,7 +2325,7 @@ impl Game {
             right,
             upper,
             lower,
-            message: &self.message,
+            message,
             face,
             scanner: show_scanner.then_some(contacts),
         };
@@ -1355,5 +2347,250 @@ impl Game {
         for i in 0..6 {
             self.hits.push((console::vcr_rect(i, top), Action::Vcr(i)));
         }
+    }
+}
+
+/// Pitch, yaw, roll and how squarely the nose faces `desired` (world axes).
+fn steer_toward(orientation: DMat3, desired: DVec3) -> (f64, f64, f64, f64) {
+    let n = desired.length();
+    if n < 1e-6 {
+        return (0.0, 0.0, 0.0, 1.0);
+    }
+    let body = orientation.transpose() * (desired / n);
+    let (bx, by, bz) = (body.x, body.y, body.z);
+    let yaw_err = bx.atan2(bz);
+    let mut pitch_err = by.atan2(if bz > -0.05 { bx.hypot(bz) } else { bz.max(0.01) });
+    if bz < 0.0 {
+        pitch_err *= (bz + 1.0).max(0.0);
+    }
+    let gain = 0.85;
+    let mut yaw = (yaw_err * gain).clamp(-1.0, 1.0);
+    let mut pitch = (pitch_err * gain).clamp(-1.0, 1.0);
+    if yaw_err.abs() < 0.03 {
+        yaw = 0.0;
+    }
+    if pitch_err.abs() < 0.03 {
+        pitch = 0.0;
+    }
+    let roll = if bz > 0.85 {
+        let up_err = (orientation.transpose() * DVec3::Y).x;
+        (-up_err * 0.4).clamp(-0.25, 0.25)
+    } else {
+        0.0
+    };
+    (pitch, yaw, roll, bz.clamp(0.0, 1.0))
+}
+
+/// Star streaks rushing out of a tunnel of squares, then a white flash.
+fn draw_hyperspace(cv: &mut Canvas, u: f64) {
+    let u = u.clamp(0.0, 1.0);
+    let (w, h) = (W, VIEW_H);
+    let (cx, cy) = (w / 2, h / 2);
+    cv.set_clip(Rect::new(0, 0, w, h));
+    cv.fill_rect(Rect::new(0, 0, w, h), [4, 8, 28]);
+    let streak = (u * 2.2).min(1.0);
+    let tunnel = ((u - 0.15) / 0.55).clamp(0.0, 1.0);
+    let flash = ((u - 0.78) / 0.22).clamp(0.0, 1.0);
+    let mut seed = 0xFE2A11u32;
+    let mut rnd = || {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        (seed >> 8) as f64 / 16_777_216.0
+    };
+    for _ in 0..90 {
+        let ang = rnd() * std::f64::consts::TAU;
+        let r0 = 4.0 + rnd() * 30.0;
+        let speed = 180.0 + rnd() * 420.0;
+        let jitter = rnd();
+        let r1 = r0 + streak * speed * (0.35 + rnd());
+        let r2 = r1 + 8.0 + streak * 40.0 * rnd();
+        let col = [(180.0 + 75.0 * rnd()) as u8, (180.0 + 75.0 * jitter) as u8, 255];
+        let (s, c) = ang.sin_cos();
+        if r1 < w.max(h) as f64 {
+            cv.line(
+                (cx as f64 + c * r1) as i32,
+                (cy as f64 + s * r1 * 0.72) as i32,
+                (cx as f64 + c * r2) as i32,
+                (cy as f64 + s * r2 * 0.72) as i32,
+                col,
+            );
+        }
+    }
+    if tunnel > 0.0 {
+        for i in 0..14 {
+            let phase = (i as f64 / 14.0 + tunnel * 2.8).fract();
+            let scale = 0.04 + phase * phase * 1.35;
+            let half_w = (w as f64 * 0.48 * scale) as i32;
+            let half_h = (h as f64 * 0.42 * scale) as i32;
+            if half_w < 2 || half_h < 2 {
+                continue;
+            }
+            let boost = (40.0 + 160.0 * (1.0 - phase)) as i32;
+            let col = [(40 + boost).min(255) as u8, (120 + boost / 2).min(255) as u8, 255];
+            cv.rect(Rect::new(cx - half_w, cy - half_h, half_w * 2, half_h * 2), col);
+            let tick = (half_w / 10).max(2);
+            for (ox, oy) in [(-1, -1), (1, -1), (-1, 1), (1, 1)] {
+                let px = cx + ox * half_w;
+                let py = cy + oy * half_h;
+                cv.line(px, py, px - ox * tick, py, col);
+                cv.line(px, py, px, py - oy * tick, col);
+            }
+        }
+    }
+    if flash > 0.35 {
+        let k = if flash < 0.5 { flash * 2.0 } else { (1.0 - flash) * 2.0 };
+        let v = (255.0 * k) as u8;
+        cv.fill_rect(Rect::new(0, 0, w, h), [v, v, v]);
+    }
+    cv.reset_clip();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shift_f3_runs_the_clock_at_one_hundred() {
+        let mut game = Game::new(crate::assets::Assets::load().expect("assets")).expect("game");
+        game.new_game();
+        let t0 = game.stardate.days;
+        game.key_down(KeyCode::F3, true);
+        game.update(10.0);
+        let advanced = game.stardate.days - t0;
+        assert!(
+            advanced > 0.01 && advanced < 0.013,
+            "clock moved {advanced} days, expected about 0.0116 at 100x"
+        );
+    }
+
+    #[test]
+    fn a_locked_system_offers_hyperspace_and_autopilot() {
+        let mut game = Game::new(crate::assets::Assets::load().expect("assets")).expect("game");
+        game.new_game();
+        game.dest = "epsilon_eri".into();
+        let (_, right, _, _) = game.console_state();
+        assert_eq!(right[1], None, "hyperspace stays hidden on the pad");
+
+        game.wh = Where::Flying;
+        let (_, right, _, _) = game.console_state();
+        assert_eq!(right[1], Some("console_icons/f8_hyperspace.png"));
+        assert_eq!(right[0], Some("console_icons/f7_autopilot.png"));
+
+        game.cheat_jump_ly = Some(80.0);
+        game.fitted.cargo.insert("hydrogen_fuel".into(), 30);
+        game.flight_control();
+        assert!(game.jump.is_some(), "the jump plays the tunnel before arriving");
+        assert_eq!(game.sys_id, "ross154");
+        game.update(JUMP_SECS);
+        assert_eq!(game.sys_id, "epsilon_eri");
+        assert!(game.jump.is_none());
+        assert!(matches!(game.fm.controls.mode, FlightMode::Manual));
+
+        let day = game.stardate.days;
+        game.key_down(KeyCode::Escape, false);
+        assert!(game.paused);
+        assert!(!game.pause_menu, "the first Escape only stops time");
+        game.mouse_button(true, true);
+        assert!(game.pause_menu);
+        assert_eq!(game.screen, Screen::Play);
+        game.update(5.0);
+        assert!((game.stardate.days - day).abs() < 1e-9);
+        game.key_down(KeyCode::F1, false);
+        assert!(!game.paused);
+
+        game.key_down(KeyCode::F6, false);
+        assert_eq!(game.map_page, MapPage::Data);
+        assert!(game.galaxy.systems.len() > 400);
+        assert!(game.galaxy.systems.contains_key("achenar"));
+
+        game.paused = false;
+        game.panel = Panel::Map;
+        game.map_page = MapPage::System;
+        let station = game.system().stations[0].id.clone();
+        game.hits.push((Rect::new(0, 0, 8, 8), Action::Body(station.clone())));
+        game.mouse = (2, 2);
+        game.mouse_button(true, true);
+        assert_eq!(game.ap_body.as_deref(), Some(station.as_str()));
+        assert_eq!(game.clouds.len(), 1, "the jump leaves residue at the exit");
+        assert_eq!(game.clouds[0].origin, "Ross 154");
+        assert_eq!(game.clouds[0].system, "epsilon_eri");
+        assert!((game.clouds[0].arrived - game.stardate.days).abs() < 1e-6);
+        assert!(game.cloud_index().is_none(), "the analyser has to be fitted");
+        game.fitted.equipment.push("cloud_analyser".into());
+        let read = game.cloud_index().expect("the exit cloud is in range");
+        assert_eq!(game.clouds[read].origin, "Ross 154");
+    }
+
+    #[test]
+    fn democracy_keeps_pirates_away_until_you_are_wanted() {
+        let mut game = Game::new(crate::assets::Assets::load().expect("assets")).expect("game");
+        game.new_game();
+        game.wh = Where::Flying;
+        game.ensure_traffic();
+        assert!(game.traffic.iter().any(|s| s.role == "police"));
+        assert!(game.traffic.iter().all(|s| s.role != "pirate"));
+        game.add_fine(10_000);
+        game.traffic.clear();
+        game.spawned_traffic = false;
+        game.ensure_traffic();
+        assert!(game.traffic.iter().any(|s| s.role == "pirate"));
+        let before = game.kills;
+        game.fire_laser();
+        assert!(game.kills >= before);
+    }
+
+    #[test]
+    fn a_fine_needs_a_witness_and_stays_with_that_government() {
+        let mut game = Game::new(crate::assets::Assets::load().expect("assets")).expect("game");
+        game.new_game();
+        game.wh = Where::Flying;
+        game.ensure_traffic();
+        game.traffic.retain(|s| s.role == "police");
+        let police = game.traffic.iter().position(|s| s.role == "police").expect("police");
+        let days = game.stardate.days;
+        let me = game.frames.ship_world_pos(&game.ship, days);
+        let them = game.frames.ship_world_pos(&game.traffic[police].state, days);
+        let away = (me - them).normalize();
+        let right = DVec3::Y.cross(away).try_normalize().unwrap_or(DVec3::X);
+        game.ship.orientation = DMat3::from_cols(right, away.cross(right), away);
+
+        let shoot = |game: &mut Game| {
+            game.laser_wait = 0.0;
+            game.fm.stats.energy = 100.0;
+            game.fire_laser();
+        };
+        shoot(&mut game);
+        assert_eq!(game.fine_here(), 0);
+        assert!(!game.police_warned);
+        shoot(&mut game);
+        assert!(game.police_warned, "two misses in sight of police are a warning");
+        assert_eq!(game.fine_here(), 0, "the warning itself is not a fine");
+        shoot(&mut game);
+        assert_eq!(game.fine_here(), 500, "the next shot alerts the station");
+
+        // Destroying the only police before a warning leaves no witness.
+        game.fines.clear();
+        game.police_misses = 0;
+        game.police_warned = false;
+        game.station_told = false;
+        game.traffic.retain(|s| s.role == "police");
+        let only = game.traffic.iter().position(|s| s.role == "police").unwrap();
+        game.traffic[only].hull = 1.0;
+        game.traffic[only].shield = 0.0;
+        game.traffic[only].state.position = game.ship.position + DVec3::Z * 10.0;
+        let them = game.frames.ship_world_pos(&game.traffic[only].state, game.stardate.days);
+        let me = game.frames.ship_world_pos(&game.ship, game.stardate.days);
+        let at = (them - me).normalize();
+        let right = DVec3::Y.cross(at).try_normalize().unwrap_or(DVec3::X);
+        game.ship.orientation = DMat3::from_cols(right, at.cross(right), at);
+        shoot(&mut game);
+        assert!(game.traffic.iter().all(|s| s.role != "police" || !s.alive));
+        assert_eq!(game.fine_here(), 0);
+
+        // The democracy fine is not payable, or even outstanding, under anarchy.
+        game.add_fine(10_000);
+        assert_eq!(game.fine_here(), 10_000);
+        game.galaxy.systems.get_mut("ross154").unwrap().government = "Anarchy".into();
+        assert_eq!(game.fine_here(), 0);
+        assert!(!game.wanted_here());
     }
 }
