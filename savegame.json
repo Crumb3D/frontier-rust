@@ -1,0 +1,69 @@
+{
+  "days": 16.780743761019643,
+  "system_id": "sol",
+  "credits": 13900100,
+  "legal": true,
+  "fines": 0,
+  "kills": 6000,
+  "mb4_sites": [],
+  "active_missions": [],
+  "docked": false,
+  "dock_location": "ross154_sirocco",
+  "fitted": {
+    "ship_id": "panther",
+    "equipment": [
+      "drive_class8",
+      "beam_20mw",
+      "shield_gen",
+      "shield_gen",
+      "ecm_naval",
+      "docking_computer",
+      "autopilot",
+      "fuel_scoop",
+      "cargo_scoop",
+      "atmo_shield",
+      "life_support",
+      "hull_repair",
+      "auto_refueller",
+      "escape_capsule",
+      "passenger_cabin",
+      "radar_mapper",
+      "energy_booster",
+      "mining_laser"
+    ],
+    "guns": {
+      "front": "mining_laser",
+      "rear": "beam_20mw"
+    },
+    "missile_load": [
+      "missile_navy",
+      "missile_navy",
+      "missile_navy",
+      "missile_navy",
+      "missile_navy",
+      "missile_navy",
+      "missile_navy",
+      "missile_navy"
+    ],
+    "cargo": {
+      "gem_stones": 20,
+      "hydrogen_fuel": 377,
+      "passenger": 15
+    },
+    "bonus_capacity": 0.0,
+    "fuel_t": 9.968123999999973,
+    "hull": 500.0,
+    "max_hull": 500.0
+  },
+  "position": [
+    -76350742.31797613,
+    -1853831.5813720962,
+    -268985220.7560134
+  ],
+  "velocity": [
+    39.06304754149094,
+    6.296361383970174,
+    44.893314548256036
+  ],
+  "parent_id": "star"
+}

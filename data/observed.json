@@ -1,0 +1,41 @@
+{
+  "_note": "What the DOS original showed at Sirocco Station at 12:00 1-Jan-3200, in screen order. Client names marked null were not opened in the original and are filled in from the name tables. Sector coordinates marked guessed were not seen in the original.",
+  "port": "ross154_sirocco",
+  "ads": [
+    {"kind": "passenger", "style": 0, "dest": "Delta Pavonis", "pay": 700, "group": 2, "client": null},
+    {"kind": "passenger", "style": 1, "dest": "Fomalhaut", "pay": 540, "group": 2, "client": null},
+    {"kind": "missing", "person": "Anja Jordan", "dest": "Wolf 630", "pay": 120, "client": null},
+    {"kind": "goods", "good": "luxury_goods", "client": "Sarah Davies"},
+    {"kind": "passenger", "style": 2, "dest": "Barnards Star", "pay": 900, "group": 5, "client": null},
+    {"kind": "military"},
+    {"kind": "goods", "good": "battle_weapons", "client": null},
+    {"kind": "passenger", "style": 2, "dest": "Arcturus", "pay": 1400, "group": 6, "client": null},
+    {"kind": "passenger", "style": 0, "dest": "Arcturus", "pay": 880, "group": 2, "client": null},
+    {"kind": "passenger", "style": 0, "dest": "Sol", "pay": 1200, "group": 3, "client": "Betty Morris", "why": "I'm visiting a friend.", "problems": "No."},
+    {"kind": "passenger", "style": 0, "dest": "Epsilon Indi", "pay": 800, "group": 2, "client": null},
+    {"kind": "package", "dest": "Fomalhaut", "pay": 520, "client": "Andrea Peterson", "why": "It's a duplication copy of the latest dream card starring Heather Goldstein.", "problems": "You might get some interest from the press. Just ignore them."}
+  ],
+  "missions": [
+    {"what": "documents", "dest": "Fomalhaut", "days": 22, "pay": 250},
+    {"what": "messages", "dest": "61 Cygni", "days": 21, "pay": 300}
+  ],
+  "ships": ["constrictor", "puma", "constrictor", "tiger"],
+  "registrations": ["VR-039", null, null, null],
+  "upgrades": ["mine_dummy", "mine_proximity", "missile_homing", "atmo_shield", "life_support", "pulse_1mw", "autopilot", "passenger_cabin", "pulse_5mw", "fuel_scoop", "cargo_scoop", "drive_ip", "drive_class1"],
+  "sectors": {
+    "Sol": [0, 0],
+    "Fomalhaut": [-1, 0],
+    "61 Cygni": [-1, 1],
+    "Ross 154": [-1, 0],
+    "Epsilon Indi": {"at": [-1, -1], "guessed": true},
+    "Barnards Star": {"at": [0, 0], "guessed": true},
+    "Delta Pavonis": {"at": [-1, -1], "guessed": true},
+    "Arcturus": {"at": [0, 2], "guessed": true},
+    "Wolf 630": {"at": [-1, 1], "guessed": true}
+  },
+  "first_names": ["Betty", "Andrea", "Sarah", "Anja", "Heather", "John", "Peter", "Mary", "David", "Susan", "James", "Linda", "Robert", "Karen", "Michael", "Helen", "Paul", "Ruth", "Mark", "Anne"],
+  "surnames": ["Morris", "Peterson", "Davies", "Jordan", "Goldstein", "Smith", "Brown", "Wilson", "Taylor", "Clarke", "Walker", "Wright", "Robinson", "Thompson", "Hughes", "Edwards", "Green", "Hall", "Wood", "Harris"],
+  "reasons": ["I'm visiting a friend.", "I'm going home.", "It's a business trip.", "I have a new job there."],
+  "package_reasons": ["It's a duplication copy of the latest dream card starring Heather Goldstein.", "It contains some valuable documents.", "It's a present for my mother."],
+  "package_problems": ["You might get some interest from the press. Just ignore them.", "No.", "No, it's quite straightforward."]
+}

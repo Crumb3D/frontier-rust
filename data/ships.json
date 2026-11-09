@@ -1,0 +1,687 @@
+[
+  {
+    "id": "shuttle",
+    "name": "Interplanetary Shuttle",
+    "allegiance": [
+      "Independent",
+      "Federation",
+      "Empire"
+    ],
+    "mass_t": 4,
+    "capacity_t": 4,
+    "price": 14000,
+    "crew": 1,
+    "missiles": 0,
+    "drive": "interplanetary",
+    "jump_ly_base": 0.0,
+    "thrust_g": 5.0,
+    "retro_g": 3.0,
+    "gun_mounts": [],
+    "scoop_capable": false,
+    "tech_min": 1
+  },
+  {
+    "id": "lifter",
+    "name": "Lifter",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 3,
+    "capacity_t": 7,
+    "price": 16000,
+    "crew": 1,
+    "missiles": 0,
+    "drive": "interplanetary",
+    "jump_ly_base": 0.0,
+    "thrust_g": 4.0,
+    "retro_g": 2.0,
+    "gun_mounts": [],
+    "scoop_capable": false,
+    "tech_min": 2
+  },
+  {
+    "id": "osprey",
+    "name": "Osprey Attack Fighter",
+    "allegiance": [
+      "Empire"
+    ],
+    "mass_t": 4,
+    "capacity_t": 11,
+    "price": 45000,
+    "crew": 1,
+    "missiles": 2,
+    "drive": "military_1",
+    "jump_ly_base": 13.33,
+    "thrust_g": 27.2,
+    "retro_g": 8.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 7
+  },
+  {
+    "id": "falcon",
+    "name": "Falcon Fighter",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 5,
+    "capacity_t": 11,
+    "price": 46000,
+    "crew": 1,
+    "missiles": 2,
+    "drive": "military_1",
+    "jump_ly_base": 12.5,
+    "thrust_g": 30.2,
+    "retro_g": 9.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 7
+  },
+  {
+    "id": "hawk",
+    "name": "Hawk Airfighter",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 11,
+    "capacity_t": 7,
+    "price": 48000,
+    "crew": 1,
+    "missiles": 2,
+    "drive": "military_1",
+    "jump_ly_base": 11.1,
+    "thrust_g": 27.0,
+    "retro_g": 6.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 6
+  },
+  {
+    "id": "kestrel",
+    "name": "Kestrel Airfighter",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 11,
+    "capacity_t": 9,
+    "price": 50000,
+    "crew": 1,
+    "missiles": 2,
+    "drive": "military_1",
+    "jump_ly_base": 10.0,
+    "thrust_g": 25.0,
+    "retro_g": 6.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 6
+  },
+  {
+    "id": "eagle_mk1",
+    "name": "Eagle long range fighter",
+    "allegiance": [
+      "Federation",
+      "Empire"
+    ],
+    "mass_t": 5,
+    "capacity_t": 20,
+    "price": 38000,
+    "crew": 1,
+    "missiles": 2,
+    "drive": "class_1",
+    "jump_ly_base": 8.0,
+    "thrust_g": 25.0,
+    "retro_g": 10.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 3
+  },
+  {
+    "id": "eagle_mk2",
+    "name": "Eagle Mk II",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 6,
+    "capacity_t": 22,
+    "price": 41000,
+    "crew": 1,
+    "missiles": 2,
+    "drive": "class_1",
+    "jump_ly_base": 7.14,
+    "thrust_g": 28.2,
+    "retro_g": 4.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 4
+  },
+  {
+    "id": "eagle_mk3",
+    "name": "Eagle Mk III",
+    "allegiance": [
+      "Empire"
+    ],
+    "mass_t": 8,
+    "capacity_t": 22,
+    "price": 43000,
+    "crew": 1,
+    "missiles": 2,
+    "drive": "class_1",
+    "jump_ly_base": 6.67,
+    "thrust_g": 28.2,
+    "retro_g": 15.1,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 4
+  },
+  {
+    "id": "mamba",
+    "name": "Mamba Light Fighter",
+    "allegiance": [
+      "Independent"
+    ],
+    "mass_t": 30,
+    "capacity_t": 20,
+    "price": 42000,
+    "crew": 1,
+    "missiles": 1,
+    "drive": "class_1",
+    "jump_ly_base": 6.6,
+    "thrust_g": 22.0,
+    "retro_g": 11.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 3
+  },
+  {
+    "id": "sidewinder",
+    "name": "Sidewinder",
+    "allegiance": [
+      "Independent"
+    ],
+    "mass_t": 8,
+    "capacity_t": 25,
+    "price": 44000,
+    "crew": 1,
+    "missiles": 0,
+    "drive": "class_1",
+    "jump_ly_base": 6.06,
+    "thrust_g": 23.2,
+    "retro_g": 12.1,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": true,
+    "tech_min": 3
+  },
+  {
+    "id": "krait",
+    "name": "Krait",
+    "allegiance": [
+      "Independent"
+    ],
+    "mass_t": 8,
+    "capacity_t": 27,
+    "price": 50000,
+    "crew": 1,
+    "missiles": 4,
+    "drive": "class_1",
+    "jump_ly_base": 5.71,
+    "thrust_g": 20.1,
+    "retro_g": 10.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 3
+  },
+  {
+    "id": "gecko",
+    "name": "Gecko",
+    "allegiance": [
+      "Independent"
+    ],
+    "mass_t": 11,
+    "capacity_t": 34,
+    "price": 66000,
+    "crew": 1,
+    "missiles": 1,
+    "drive": "class_2",
+    "jump_ly_base": 17.78,
+    "thrust_g": 16.1,
+    "retro_g": 9.0,
+    "gun_mounts": [
+      "front",
+      "rear"
+    ],
+    "scoop_capable": false,
+    "tech_min": 4
+  },
+  {
+    "id": "adder",
+    "name": "Adder",
+    "allegiance": [
+      "Independent",
+      "Federation"
+    ],
+    "mass_t": 15,
+    "capacity_t": 40,
+    "price": 73000,
+    "crew": 1,
+    "missiles": 0,
+    "drive": "class_2",
+    "jump_ly_base": 14.55,
+    "thrust_g": 18.1,
+    "retro_g": 8.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": true,
+    "tech_min": 4
+  },
+  {
+    "id": "viper",
+    "name": "Viper Defence Craft",
+    "allegiance": [
+      "Independent",
+      "Federation",
+      "Empire"
+    ],
+    "mass_t": 15,
+    "capacity_t": 50,
+    "price": 87000,
+    "crew": 1,
+    "missiles": 4,
+    "drive": "class_2",
+    "jump_ly_base": 12.31,
+    "thrust_g": 24.2,
+    "retro_g": 10.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": true,
+    "tech_min": 5
+  },
+  {
+    "id": "cobra_mk1",
+    "name": "Cobra Mk I",
+    "allegiance": [
+      "Independent",
+      "Federation"
+    ],
+    "mass_t": 15,
+    "capacity_t": 60,
+    "price": 97000,
+    "crew": 1,
+    "missiles": 2,
+    "drive": "class_2",
+    "jump_ly_base": 10.67,
+    "thrust_g": 16.1,
+    "retro_g": 6.0,
+    "gun_mounts": [
+      "front",
+      "rear"
+    ],
+    "scoop_capable": true,
+    "tech_min": 4
+  },
+  {
+    "id": "moray",
+    "name": "Moray Starboat",
+    "allegiance": [
+      "Independent",
+      "Federation"
+    ],
+    "mass_t": 17,
+    "capacity_t": 70,
+    "price": 109000,
+    "crew": 1,
+    "missiles": 4,
+    "drive": "class_2",
+    "jump_ly_base": 9.2,
+    "thrust_g": 14.1,
+    "retro_g": 6.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": true,
+    "tech_min": 4
+  },
+  {
+    "id": "cobra_mk3",
+    "name": "Cobra Mk III",
+    "allegiance": [
+      "Independent",
+      "Federation"
+    ],
+    "mass_t": 20,
+    "capacity_t": 80,
+    "price": 124000,
+    "crew": 1,
+    "missiles": 4,
+    "drive": "class_2",
+    "jump_ly_base": 8.0,
+    "thrust_g": 20.1,
+    "retro_g": 7.0,
+    "gun_mounts": [
+      "front",
+      "rear"
+    ],
+    "scoop_capable": true,
+    "tech_min": 5
+  },
+  {
+    "id": "constrictor",
+    "name": "Constrictor",
+    "allegiance": [
+      "Independent",
+      "Federation"
+    ],
+    "mass_t": 30,
+    "capacity_t": 90,
+    "price": 143000,
+    "crew": 2,
+    "missiles": 2,
+    "drive": "class_2",
+    "drive_min": 2,
+    "drive_max": 4,
+    "jump_ly_base": 6.67,
+    "thrust_g": 22.2,
+    "retro_g": 10.0,
+    "gun_mounts": [
+      "front",
+      "rear"
+    ],
+    "scoop_capable": true,
+    "tech_min": 6
+  },
+  {
+    "id": "asp",
+    "name": "Asp Explorer",
+    "allegiance": [
+      "Independent",
+      "Federation"
+    ],
+    "mass_t": 30,
+    "capacity_t": 120,
+    "price": 187000,
+    "crew": 2,
+    "missiles": 1,
+    "drive": "class_3",
+    "jump_ly_base": 12.0,
+    "thrust_g": 22.2,
+    "retro_g": 7.0,
+    "gun_mounts": [
+      "front",
+      "rear"
+    ],
+    "scoop_capable": true,
+    "tech_min": 7
+  },
+  {
+    "id": "transporter",
+    "name": "Transporter",
+    "allegiance": [
+      "Independent",
+      "Federation"
+    ],
+    "mass_t": 40,
+    "capacity_t": 160,
+    "price": 241000,
+    "crew": 3,
+    "missiles": 2,
+    "drive": "class_3",
+    "jump_ly_base": 9.0,
+    "thrust_g": 9.0,
+    "retro_g": 4.0,
+    "gun_mounts": [
+      "front",
+      "rear",
+      "top"
+    ],
+    "scoop_capable": false,
+    "tech_min": 5
+  },
+  {
+    "id": "lion",
+    "name": "Lion Transport",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 65,
+    "capacity_t": 235,
+    "price": 348000,
+    "crew": 4,
+    "missiles": 8,
+    "drive": "class_3",
+    "jump_ly_base": 6.0,
+    "thrust_g": 5.0,
+    "retro_g": 3.0,
+    "gun_mounts": [
+      "front",
+      "rear",
+      "top"
+    ],
+    "scoop_capable": true,
+    "tech_min": 6
+  },
+  {
+    "id": "tiger",
+    "name": "Tiger Trader",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 80,
+    "capacity_t": 320,
+    "price": 472000,
+    "crew": 5,
+    "missiles": 1,
+    "drive": "class_4",
+    "jump_ly_base": 8.0,
+    "thrust_g": 12.1,
+    "retro_g": 5.0,
+    "gun_mounts": [
+      "front",
+      "rear",
+      "top"
+    ],
+    "scoop_capable": true,
+    "tech_min": 7
+  },
+  {
+    "id": "imperial_courier",
+    "name": "Imperial Courier",
+    "allegiance": [
+      "Empire"
+    ],
+    "mass_t": 130,
+    "capacity_t": 350,
+    "price": 611000,
+    "crew": 1,
+    "missiles": 6,
+    "drive": "class_5",
+    "jump_ly_base": 10.42,
+    "thrust_g": 16.1,
+    "retro_g": 6.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 8
+  },
+  {
+    "id": "python",
+    "name": "Python Freighter",
+    "allegiance": [
+      "Independent"
+    ],
+    "mass_t": 100,
+    "capacity_t": 400,
+    "price": 575000,
+    "crew": 7,
+    "missiles": 4,
+    "drive": "class_4",
+    "jump_ly_base": 6.4,
+    "thrust_g": 10.0,
+    "retro_g": 4.0,
+    "gun_mounts": [
+      "front",
+      "rear"
+    ],
+    "scoop_capable": true,
+    "tech_min": 6
+  },
+  {
+    "id": "imperial_trader",
+    "name": "Imperial Trader",
+    "allegiance": [
+      "Empire"
+    ],
+    "mass_t": 175,
+    "capacity_t": 525,
+    "price": 954000,
+    "crew": 1,
+    "missiles": 6,
+    "drive": "class_6",
+    "jump_ly_base": 10.29,
+    "thrust_g": 9.0,
+    "retro_g": 4.0,
+    "gun_mounts": [
+      "front"
+    ],
+    "scoop_capable": false,
+    "tech_min": 9
+  },
+  {
+    "id": "anaconda",
+    "name": "Anaconda",
+    "allegiance": [
+      "Independent"
+    ],
+    "mass_t": 150,
+    "capacity_t": 650,
+    "price": 1060000,
+    "crew": 8,
+    "missiles": 8,
+    "drive": "class_6",
+    "jump_ly_base": 9.0,
+    "thrust_g": 6.0,
+    "retro_g": 3.0,
+    "gun_mounts": [
+      "front",
+      "rear"
+    ],
+    "scoop_capable": true,
+    "tech_min": 7
+  },
+  {
+    "id": "puma",
+    "name": "Puma Clipper",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 175,
+    "capacity_t": 825,
+    "price": 1265000,
+    "crew": 9,
+    "missiles": 8,
+    "drive": "class_6",
+    "jump_ly_base": 7.2,
+    "thrust_g": 6.0,
+    "retro_g": 3.0,
+    "gun_mounts": [
+      "front",
+      "rear",
+      "top",
+      "bottom"
+    ],
+    "scoop_capable": true,
+    "tech_min": 8
+  },
+  {
+    "id": "boa",
+    "name": "Boa",
+    "allegiance": [
+      "Independent"
+    ],
+    "mass_t": 200,
+    "capacity_t": 1300,
+    "price": 2474000,
+    "crew": 10,
+    "missiles": 6,
+    "drive": "class_8",
+    "jump_ly_base": 10.8,
+    "thrust_g": 8.0,
+    "retro_g": 4.0,
+    "gun_mounts": [
+      "front",
+      "rear",
+      "top",
+      "bottom"
+    ],
+    "scoop_capable": true,
+    "tech_min": 8
+  },
+  {
+    "id": "imperial_explorer",
+    "name": "Imperial Explorer",
+    "allegiance": [
+      "Empire"
+    ],
+    "mass_t": 1600,
+    "capacity_t": 1050,
+    "price": 2600000,
+    "crew": 10,
+    "missiles": 8,
+    "drive": "class_7",
+    "jump_ly_base": 11.2,
+    "thrust_g": 7.0,
+    "retro_g": 3.5,
+    "gun_mounts": [
+      "front",
+      "rear",
+      "top"
+    ],
+    "scoop_capable": true,
+    "tech_min": 9
+  },
+  {
+    "id": "panther",
+    "name": "Panther Clipper",
+    "allegiance": [
+      "Federation"
+    ],
+    "mass_t": 225,
+    "capacity_t": 1775,
+    "price": 2753000,
+    "crew": 12,
+    "missiles": 8,
+    "drive": "class_8",
+    "jump_ly_base": 9.1,
+    "thrust_g": 6.0,
+    "retro_g": 3.0,
+    "gun_mounts": [
+      "front",
+      "rear",
+      "top",
+      "bottom"
+    ],
+    "scoop_capable": false,
+    "tech_min": 9
+  }
+]

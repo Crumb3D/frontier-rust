@@ -1,0 +1,9 @@
+{
+  "name": "frontier-elite-ii",
+  "engine": "generic",
+  "launch": { "cmd": "python", "args": ["main.py"] },
+  "log": { "stdout": true },
+  "ready": "Frontier",
+  "window": "Frontier",
+  "sourceRoots": ["."]
+}

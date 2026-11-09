@@ -1,0 +1,11 @@
+target/
+venv/
+__pycache__/
+*.pyc
+
+# The commercial DOS game, and the bulky rips taken from it.
+Frontier - PC ORIGINAL FOR REFERENCE/
+assets/Images/intro_frames/
+assets/Images/intro.mp4
+assets/music/
+assets/*.pdf
